@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "JSON Question Formatter",
+  "version": "1.0",
+  "description": "Format questions in JSON for better LLM results",
+
+  "permissions": ["contextMenus", "activeTab", "storage"],
+
+  "host_permissions": ["https://api.openai.com/*"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://claude.ai/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://perplexity.ai/*",
+        "*://*/*"
+      ],
+      "js": ["content.js"]
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
