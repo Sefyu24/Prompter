@@ -107,6 +107,26 @@ document.addEventListener("DOMContentLoaded", async function () {
     loginWithGoogle();
   });
 
+  // Sign out button
+  const signOutButton = document.getElementById("sign-out-btn");
+  if (signOutButton) {
+    signOutButton.addEventListener("click", async function() {
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        
+        // Clear stored session
+        await chrome.storage.local.remove(['session']);
+        
+        // Show login page
+        showLoginPage();
+      } catch (error) {
+        console.error('Sign out error:', error);
+        showError('Failed to sign out');
+      }
+    });
+  }
+
   async function loginWithGoogle() {
     try {
       console.log('Starting Google OAuth...');
@@ -130,43 +150,86 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
   }
 
-  async function loadUserData() {
+  async function loadDashboard() {
     try {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-      if (error) throw error;
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
 
-      // Debug: Print all user info to console
-      console.log("Full user object:", user);
-      console.log("User email:", user.email);
-      console.log("User metadata:", user.user_metadata);
-
-      // Update UI
-      const userElement = document.getElementById("user-info");
-      if (userElement && user) {
-        userElement.innerHTML = `
-          <h3>Welcome!</h3>
-          <p>Email: ${user.email}</p>
-          <p>Name: ${user.user_metadata?.full_name || "Not provided"}</p>
-          <p>ID: ${user.id}</p>
-        `;
+      // Update user info in header
+      document.getElementById("user-name").textContent = user.user_metadata?.full_name || "User";
+      document.getElementById("user-email").textContent = user.email;
+      if (user.user_metadata?.avatar_url) {
+        document.getElementById("user-avatar").src = user.user_metadata.avatar_url;
       }
+
+      // Fetch user stats from the view
+      const { data: stats, error: statsError } = await supabase
+        .from('user_dashboard_stats')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (statsError) {
+        console.error('Error fetching stats:', statsError);
+        // Set default values if error
+        document.getElementById("total-requests").textContent = "0";
+        document.getElementById("total-templates").textContent = "0";
+      } else {
+        // Update stats
+        document.getElementById("total-requests").textContent = stats.total_formatting_requests || "0";
+        document.getElementById("total-templates").textContent = stats.total_templates || "0";
+      }
+
+      // Fetch user's templates
+      const { data: templates, error: templatesError } = await supabase
+        .from('templates')
+        .select('*')
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false });
+
+      if (templatesError) {
+        console.error('Error fetching templates:', templatesError);
+        displayTemplates([]);
+      } else {
+        displayTemplates(templates || []);
+      }
+
     } catch (error) {
-      console.error("Error loading user data:", error);
+      console.error("Error loading dashboard:", error);
+      showError("Failed to load dashboard");
     }
+  }
+
+  // Display templates in the list
+  function displayTemplates(templates) {
+    const templatesList = document.getElementById("templates-list");
+    
+    if (templates.length === 0) {
+      templatesList.innerHTML = '<p class="empty-state">No templates yet. Create your first template!</p>';
+      return;
+    }
+
+    // Build HTML for templates
+    const templatesHTML = templates.map(template => `
+      <div class="template-item" data-template-id="${template.id}">
+        <div class="template-name">${template.name}</div>
+        ${template.description ? `<div class="template-description">${template.description}</div>` : ''}
+      </div>
+    `).join('');
+
+    templatesList.innerHTML = templatesHTML;
   }
 
   function showHomePage() {
     document.getElementById("Login-page").style.display = "none";
-    document.getElementById("user-info").style.display = "block";
-    loadUserData();
+    document.getElementById("user-dashboard").style.display = "block";
+    loadDashboard();
   }
 
   function showLoginPage() {
     document.getElementById("Login-page").style.display = "block";
-    document.getElementById("user-info").style.display = "none";
+    document.getElementById("user-dashboard").style.display = "none";
   }
 
   function showError(message) {

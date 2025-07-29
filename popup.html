@@ -15,7 +15,40 @@
         <button class="button" id="sso-btn">Sign in</button>
       </div>
     </div>
-    <div id="user-info" class="container">Hello</div>
+    <!-- User Dashboard -->
+    <div id="user-dashboard" class="container" style="display: none;">
+      <!-- User Header -->
+      <div class="user-header">
+        <img id="user-avatar" src="" alt="Avatar" class="avatar">
+        <div>
+          <h2 id="user-name">Loading...</h2>
+          <p id="user-email" class="email">Loading...</p>
+        </div>
+      </div>
+
+      <!-- Stats Cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="total-requests">0</div>
+          <div class="stat-label">Total Requests</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="total-templates">0</div>
+          <div class="stat-label">Templates</div>
+        </div>
+      </div>
+
+      <!-- Templates Section -->
+      <div class="section">
+        <h3>My Templates</h3>
+        <div id="templates-list" class="templates-list">
+          <p class="loading-text">Loading templates...</p>
+        </div>
+      </div>
+
+      <!-- Sign Out Button -->
+      <button id="sign-out-btn" class="button secondary">Sign Out</button>
+    </div>
 
     <script src="./src/popup.js" type="module"></script>
   </body>

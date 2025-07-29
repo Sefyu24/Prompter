@@ -1,5 +1,6 @@
 *.mcp.json
 *.claude
+*claude*
 
 ### macOS ###
 # General
@@ -142,3 +143,4 @@ npm-debug.log
 yarn-error.log
 
 # End of https://www.gitignore.io/api/node,vuejs,macos
+
