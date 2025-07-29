@@ -10,6 +10,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",
     "dotenv": "^17.2.1",
+    "insert-text-at-cursor": "^0.3.0",
     "json-stringify-pretty-compact": "^4.0.0"
   },
   "devDependencies": {

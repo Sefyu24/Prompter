@@ -288,21 +288,29 @@ async function formatTextWithTemplate(text, template, user) {
     const data = await response.json();
     let formattedText = data.choices[0].message.content.trim();
     
+    // Debug: Log the raw response (remove in production)
+    console.log('OpenAI raw response length:', formattedText.length);
+    
     // Try to format JSON if the response looks like JSON
     try {
       // Check if the response starts and ends with JSON brackets/braces
       if ((formattedText.startsWith('{') && formattedText.endsWith('}')) || 
           (formattedText.startsWith('[') && formattedText.endsWith(']'))) {
         const jsonObject = JSON.parse(formattedText);
+        
         // Use json-stringify-pretty-compact for better formatting
         formattedText = stringify(jsonObject, {
           maxLength: 80,  // Line length before wrapping
           indent: 2       // 2-space indentation
         });
+        console.log('JSON formatted successfully');
+      } else {
+        console.log('Response does not look like JSON, returning as-is');
       }
     } catch (jsonError) {
       // If it's not valid JSON, just return the original formatted text
-      console.log('Response is not JSON, returning as-is');
+      console.log('JSON parsing failed:', jsonError.message);
+      console.log('Response is not valid JSON, returning as-is');
     }
     
     return formattedText;

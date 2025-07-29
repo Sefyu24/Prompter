@@ -1,4 +1,6 @@
 // Content script - runs on web pages
+import insertTextAtCursor from 'insert-text-at-cursor';
+
 console.log("JSON Formatter extension loaded");
 
 let selectedText = "";
@@ -64,40 +66,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// Function to replace selected text with formatted JSON
+/**
+ * Replace selected text with formatted text using insert-text-at-cursor library
+ * This handles all input types: textarea, input, contenteditable, etc.
+ * @param {string} newText - The formatted text to insert
+ */
 function replaceSelectedText(newText) {
   const selection = window.getSelection();
 
   if (selection.rangeCount > 0) {
     const range = selection.getRangeAt(0);
-
-    // Check if we're in a contenteditable element
     const container = range.commonAncestorContainer;
     const editableElement = findEditableParent(container);
 
     if (editableElement) {
-      if (
-        editableElement.tagName.toLowerCase() === "textarea" ||
-        editableElement.tagName.toLowerCase() === "input"
-      ) {
-        // Handle textarea/input
-        const start = editableElement.selectionStart;
-        const end = editableElement.selectionEnd;
-        const text = editableElement.value;
-
-        editableElement.value =
-          text.substring(0, start) + newText + text.substring(end);
-        editableElement.selectionStart = start;
-        editableElement.selectionEnd = start + newText.length;
-      } else {
-        // Handle contenteditable div
-        range.deleteContents();
-        range.insertNode(document.createTextNode(newText));
-        selection.removeAllRanges();
+      try {
+        // Focus the element first to ensure proper insertion
+        editableElement.focus();
+        
+        // Use insert-text-at-cursor library for cross-platform text insertion
+        insertTextAtCursor(editableElement, newText);
+        
+        // Trigger input event to notify the page of changes
+        editableElement.dispatchEvent(new Event("input", { bubbles: true }));
+        editableElement.dispatchEvent(new Event("change", { bubbles: true }));
+        
+      } catch (error) {
+        console.error('Error inserting text:', error);
+        // Fallback to manual replacement if library fails
+        fallbackTextReplacement(editableElement, newText);
       }
+    }
+  }
+}
 
-      // Trigger input event to notify the page of changes
-      editableElement.dispatchEvent(new Event("input", { bubbles: true }));
+/**
+ * Fallback text replacement method if insert-text-at-cursor fails
+ * @param {HTMLElement} element - The target element
+ * @param {string} newText - The text to insert
+ */
+function fallbackTextReplacement(element, newText) {
+  if (element.tagName.toLowerCase() === "textarea" || 
+      element.tagName.toLowerCase() === "input") {
+    // Handle textarea/input
+    const start = element.selectionStart;
+    const end = element.selectionEnd;
+    const text = element.value;
+
+    element.value = text.substring(0, start) + newText + text.substring(end);
+    element.selectionStart = start;
+    element.selectionEnd = start + newText.length;
+  } else {
+    // Handle contenteditable - simple text replacement
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(newText));
+      selection.removeAllRanges();
     }
   }
 }
