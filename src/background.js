@@ -282,7 +282,13 @@ async function formatTextWithTemplate(text, template, user) {
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorBody = await response.text();
+      console.error('OpenAI API Error Details:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorBody
+      });
+      throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
     }
 
     const data = await response.json();
@@ -350,8 +356,10 @@ async function trackFormattingRequest(userId, templateId, inputText, outputText)
 
 // add tab listener when background script starts
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  console.log('Tab updated:', changeInfo.url);
-  console.log('Redirect URL:', chrome.identity.getRedirectURL());
+  // Only log when there's an actual URL change (not undefined)
+  if (changeInfo.url) {
+    console.log('Tab updated:', changeInfo.url);
+  }
   
   // Check for both extension redirect URL and localhost callback
   if (changeInfo.url?.startsWith(chrome.identity.getRedirectURL()) || 

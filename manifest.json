@@ -20,6 +20,9 @@
         "https://chat.openai.com/*",
         "https://gemini.google.com/*",
         "https://perplexity.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://t3.chat/*",
+        "https://www.t3.chat/*",
         "*://*/*"
       ],
       "js": ["content.js"]
