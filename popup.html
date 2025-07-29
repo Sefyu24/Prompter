@@ -5,51 +5,18 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
-    <div class="container">
-      <div class="header">
-        <h1>JSON Question Formatter</h1>
-        <p>Format your questions for better AI responses</p>
-      </div>
+    <div id="app">
+      <!-- Content will go here -->
+      <div id="Login-page" class="container">
+        <h1>Welcome to Prompter Ai</h1>
+        <h2>Customize prompts quickly</h2>
 
-      <div class="settings">
-        <div class="field">
-          <label for="apiKey">OpenAI API Key:</label>
-          <input
-            type="password"
-            id="apiKey"
-            placeholder="Enter your OpenAI API key"
-          />
-          <button id="toggleKey" class="toggle-btn">Show</button>
-        </div>
-
-        <div class="actions">
-          <button id="saveKey" class="save-btn">Save</button>
-          <button id="testKey" class="test-btn">Test Connection</button>
-        </div>
-
-        <div id="status" class="status"></div>
-      </div>
-
-      <div class="instructions">
-        <h3>How to use:</h3>
-        <ol>
-          <li>Enter your OpenAI API key above</li>
-          <li>Highlight text in any input field</li>
-          <li>Right-click and select "Format question in JSON"</li>
-          <li>Your text will be automatically formatted</li>
-        </ol>
-      </div>
-
-      <div class="footer">
-        <p>
-          Need an API key?
-          <a href="https://platform.openai.com/api-keys" target="_blank"
-            >Get one here</a
-          >
-        </p>
+        <p>Sign in with google to continue</p>
+        <button class="button" id="sso-btn">Sign in</button>
       </div>
     </div>
+    <div id="user-info" class="container">Hello</div>
 
-    <script src="popup.js"></script>
+    <script src="./src/popup.js" type="module"></script>
   </body>
 </html>

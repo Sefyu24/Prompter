@@ -4,12 +4,13 @@
   "version": "1.0",
   "description": "Format questions in JSON for better LLM results",
 
-  "permissions": ["contextMenus", "activeTab", "storage"],
+  "permissions": ["contextMenus", "activeTab", "storage", "identity", "tabs"],
 
   "host_permissions": ["https://api.openai.com/*"],
 
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
 
   "content_scripts": [
