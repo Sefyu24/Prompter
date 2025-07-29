@@ -84,8 +84,14 @@ function replaceSelectedText(newText) {
         // Focus the element first to ensure proper insertion
         editableElement.focus();
         
-        // Use insert-text-at-cursor library for cross-platform text insertion
-        insertTextAtCursor(editableElement, newText);
+        // Handle contenteditable elements differently than textarea/input
+        if (editableElement.contentEditable === 'true') {
+          // For contenteditable, we need to handle newlines properly
+          insertTextIntoContentEditable(editableElement, newText);
+        } else {
+          // For textarea/input, use the library directly
+          insertTextAtCursor(editableElement, newText);
+        }
         
         // Trigger input event to notify the page of changes
         editableElement.dispatchEvent(new Event("input", { bubbles: true }));
@@ -97,6 +103,43 @@ function replaceSelectedText(newText) {
         fallbackTextReplacement(editableElement, newText);
       }
     }
+  }
+}
+
+/**
+ * Insert text into contenteditable element with proper line break handling
+ * @param {HTMLElement} element - The contenteditable element
+ * @param {string} text - The text to insert
+ */
+function insertTextIntoContentEditable(element, text) {
+  const selection = window.getSelection();
+  
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    
+    // Split text by newlines and create proper DOM structure
+    const lines = text.split('\n');
+    const fragment = document.createDocumentFragment();
+    
+    lines.forEach((line, index) => {
+      // Add the text content
+      if (line.length > 0) {
+        fragment.appendChild(document.createTextNode(line));
+      }
+      
+      // Add line break (except for the last line)
+      if (index < lines.length - 1) {
+        fragment.appendChild(document.createElement('br'));
+      }
+    });
+    
+    range.insertNode(fragment);
+    
+    // Move cursor to end of inserted content
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
   }
 }
 
