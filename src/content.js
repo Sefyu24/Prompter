@@ -399,13 +399,17 @@ function showNotification(message, type) {
     top: 20px;
     right: 20px;
     padding: 12px 20px;
-    background-color: ${type === "error" ? "#f44336" : "#2196F3"};
-    color: white;
-    border-radius: 4px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    background-color: ${type === "error" ? "oklch(0.629 0.1902 23.0704)" : "oklch(0.5393 0.2713 286.7462)"};
+    color: oklch(1 0 0);
+    border: 1px solid ${type === "error" ? "oklch(0.629 0.1902 23.0704)" : "oklch(0.5393 0.2713 286.7462)"};
+    border-radius: calc(1.4rem - 6px);
+    box-shadow: 0px 2px 3px 0px hsl(0 0% 0% / 0.16), 0px 1px 2px -1px hsl(0 0% 0% / 0.16);
     z-index: 10000;
-    font-family: Arial, sans-serif;
+    font-family: 'Plus Jakarta Sans', sans-serif;
     font-size: 14px;
+    font-weight: 500;
+    letter-spacing: -0.025em;
+    animation: prompter-notification-enter 0.2s ease-out;
   `;
   
   document.body.appendChild(notification);
@@ -525,7 +529,7 @@ function renderTemplateList() {
 }
 
 /**
- * Add modal styles to the page
+ * Add modal styles to the page using Tailwind-based design system
  */
 function addModalStyles() {
   if (document.getElementById('prompter-modal-styles')) {
@@ -535,6 +539,8 @@ function addModalStyles() {
   const style = document.createElement('style');
   style.id = 'prompter-modal-styles';
   style.textContent = `
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap');
+    
     .prompter-modal-overlay {
       position: fixed;
       top: 0;
@@ -546,13 +552,15 @@ function addModalStyles() {
       display: flex;
       align-items: center;
       justify-content: center;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      letter-spacing: -0.025em;
     }
 
     .prompter-modal {
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      background: oklch(0.994 0 0);
+      border: 1px solid oklch(0.93 0.0094 286.2156);
+      border-radius: 1.4rem;
+      box-shadow: 0px 8px 10px -1px hsl(0 0% 0% / 0.16), 0px 2px 3px 0px hsl(0 0% 0% / 0.16);
       width: 90%;
       max-width: 480px;
       max-height: 80vh;
@@ -571,31 +579,45 @@ function addModalStyles() {
       }
     }
 
+    @keyframes prompter-notification-enter {
+      from {
+        opacity: 0;
+        transform: translateX(100px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
     .prompter-header {
       padding: 20px 20px 16px;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid oklch(0.93 0.0094 286.2156);
     }
 
     .prompter-header h3 {
       margin: 0 0 12px 0;
       font-size: 18px;
       font-weight: 600;
-      color: #111827;
+      color: oklch(0 0 0);
     }
 
     .prompter-search {
       width: 100%;
       padding: 8px 12px;
-      border: 1px solid #d1d5db;
-      border-radius: 6px;
+      border: 1px solid oklch(0.93 0.0094 286.2156);
+      border-radius: calc(1.4rem - 8px);
       font-size: 14px;
       outline: none;
       box-sizing: border-box;
+      background: oklch(0.9401 0 0);
+      color: oklch(0 0 0);
+      font-family: 'Plus Jakarta Sans', sans-serif;
     }
 
     .prompter-search:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      border-color: oklch(0.5393 0.2713 286.7462);
+      box-shadow: 0 0 0 3px oklch(0.5393 0.2713 286.7462 / 0.1);
     }
 
     .prompter-template-list {
@@ -609,33 +631,36 @@ function addModalStyles() {
       align-items: center;
       padding: 12px 16px;
       margin: 4px 0;
-      border-radius: 8px;
+      border-radius: calc(1.4rem - 6px);
       cursor: pointer;
       transition: all 0.15s ease;
       position: relative;
+      background: oklch(0.994 0 0);
+      border: 1px solid transparent;
     }
 
-    .prompter-template-item:hover,
-    .prompter-template-item.selected {
-      background-color: #f3f4f6;
-      border: 1px solid #d1d5db;
+    .prompter-template-item:hover {
+      background-color: oklch(0.9702 0 0);
+      border: 1px solid oklch(0.93 0.0094 286.2156);
+      box-shadow: 0px 2px 3px 0px hsl(0 0% 0% / 0.08);
     }
 
     .prompter-template-item.selected {
-      background-color: #eff6ff;
-      border-color: #3b82f6;
+      background-color: oklch(0.9393 0.0288 266.368);
+      border-color: oklch(0.5393 0.2713 286.7462);
+      box-shadow: 0px 2px 3px 0px hsl(0 0% 0% / 0.16), 0px 1px 2px -1px hsl(0 0% 0% / 0.16);
     }
 
     .prompter-template-name {
       font-weight: 500;
-      color: #111827;
+      color: oklch(0 0 0);
       margin-bottom: 2px;
       flex: 1;
     }
 
     .prompter-template-description {
       font-size: 13px;
-      color: #6b7280;
+      color: oklch(0.4386 0 0);
       flex: 1;
     }
 
@@ -643,37 +668,37 @@ function addModalStyles() {
       position: absolute;
       top: 8px;
       right: 8px;
-      background: #e5e7eb;
-      color: #6b7280;
+      background: oklch(0.9702 0 0);
+      color: oklch(0.4386 0 0);
       font-size: 11px;
       font-weight: 500;
       padding: 2px 6px;
-      border-radius: 4px;
+      border-radius: calc(1.4rem - 10px);
       min-width: 16px;
       text-align: center;
     }
 
     .prompter-template-item.selected .prompter-template-number {
-      background: #3b82f6;
-      color: white;
+      background: oklch(0.5393 0.2713 286.7462);
+      color: oklch(1 0 0);
     }
 
     .prompter-empty {
       text-align: center;
       padding: 40px 20px;
-      color: #6b7280;
+      color: oklch(0.4386 0 0);
       font-size: 14px;
     }
 
     .prompter-footer {
       padding: 12px 20px;
-      background: #f9fafb;
-      border-top: 1px solid #e5e7eb;
+      background: oklch(0.9702 0 0);
+      border-top: 1px solid oklch(0.93 0.0094 286.2156);
     }
 
     .prompter-hints {
       font-size: 12px;
-      color: #6b7280;
+      color: oklch(0.4386 0 0);
       text-align: center;
       display: block;
     }

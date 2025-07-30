@@ -3,6 +3,10 @@ import { resolve } from 'path';
 import { copyFileSync, writeFileSync, readFileSync } from 'fs';
 
 export default defineConfig({
+  base: './',
+  css: {
+    postcss: './postcss.config.js',
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
@@ -17,10 +21,6 @@ export default defineConfig({
         chunkFileNames: '[name]-[hash].js',
         assetFileNames: '[name].[ext]',
       }
-    },
-    watch: {
-      include: 'src/**',
-      exclude: 'node_modules/**'
     }
   },
   plugins: [
@@ -29,8 +29,6 @@ export default defineConfig({
       writeBundle() {
         // Copy manifest.json to dist
         copyFileSync('manifest.json', 'dist/manifest.json');
-        // Copy popup.css
-        copyFileSync('popup.css', 'dist/popup.css');
       }
     }
   ]

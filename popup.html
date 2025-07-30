@@ -2,63 +2,69 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <link rel="stylesheet" href="popup.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Lora:ital,wght@0,400..700;1,400..700&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./src/styles/globals.css" />
   </head>
-  <body>
-    <div id="app">
-      <!-- Content will go here -->
-      <div id="Login-page" class="container">
-        <h1>Welcome to Prompter Ai</h1>
-        <h2>Customize prompts quickly</h2>
-
-        <p>Sign in with google to continue</p>
-        <button class="button" id="sso-btn">Sign in</button>
+  <body class="bg-background text-foreground font-sans tracking-normal min-w-[380px]">
+    <div id="app" class="min-h-screen">
+      <!-- Login Page -->
+      <div id="Login-page" class="flex flex-col items-center justify-center min-h-[400px] p-[60px_40px] text-center">
+        <h1 class="text-[28px] text-foreground mb-2 font-semibold">Welcome to Prompter AI</h1>
+        <h2 class="text-base text-muted-foreground font-normal mb-10">Customize prompts quickly</h2>
+        
+        <p class="text-muted-foreground text-sm mb-6">Sign in with Google to continue</p>
+        <button id="sso-btn" class="inline-flex items-center justify-center gap-3 bg-background border border-border rounded px-6 py-3 text-sm font-medium text-foreground cursor-pointer transition-all duration-200 w-full max-w-[240px] hover:shadow-sm hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 active:bg-secondary">
+          Sign in
+        </button>
       </div>
-    </div>
-    <!-- User Dashboard -->
-    <div id="user-dashboard" class="container" style="display: none;">
+
+      <!-- User Dashboard -->
+      <div id="user-dashboard" class="p-5 hidden">
       <!-- User Header -->
-      <div class="user-header">
-        <img id="user-avatar" src="" alt="Avatar" class="avatar">
+      <div class="flex items-center gap-[15px] mb-5 pb-5 border-b border-border">
+        <img id="user-avatar" src="" alt="Avatar" class="w-[50px] h-[50px] rounded-full object-cover">
         <div>
-          <h2 id="user-name">Loading...</h2>
-          <p id="user-email" class="email">Loading...</p>
+          <h2 id="user-name" class="m-0 text-lg text-foreground font-semibold">Loading...</h2>
+          <p id="user-email" class="mt-1 mb-0 text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
 
       <!-- Stats Cards -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-number" id="total-requests">0</div>
-          <div class="stat-label">Total Requests</div>
+      <div class="grid grid-cols-2 gap-[15px] mb-[25px]">
+        <div class="bg-muted border border-border rounded-lg p-5 text-center">
+          <div id="total-requests" class="text-[28px] font-semibold text-foreground mb-[5px]">0</div>
+          <div class="text-sm text-muted-foreground">Total Requests</div>
         </div>
-        <div class="stat-card">
-          <div class="stat-number" id="total-templates">0</div>
-          <div class="stat-label">Templates</div>
+        <div class="bg-muted border border-border rounded-lg p-5 text-center">
+          <div id="total-templates" class="text-[28px] font-semibold text-foreground mb-[5px]">0</div>
+          <div class="text-sm text-muted-foreground">Templates</div>
         </div>
       </div>
 
       <!-- Templates Section -->
-      <div class="section">
-        <h3>My Templates</h3>
-        <div id="templates-list" class="templates-list">
-          <p class="loading-text">Loading templates...</p>
+      <div class="mb-5">
+        <h3 class="text-base m-0 mb-[15px] text-foreground font-medium">My Templates</h3>
+        <div id="templates-list" class="bg-muted border border-border rounded-lg p-[15px] max-h-[200px] overflow-y-auto">
+          <p class="text-muted-foreground text-sm text-center m-0">Loading templates...</p>
         </div>
       </div>
 
       <!-- History Section -->
-      <div class="section">
-        <div class="section-header">
-          <h3>Recent History</h3>
-          <button id="clear-history-btn" class="button-small secondary">Clear All</button>
+      <div class="mb-5">
+        <div class="flex items-center justify-between mb-[15px]">
+          <h3 class="m-0 text-base text-foreground font-medium">Recent History</h3>
+          <button id="clear-history-btn" class="px-3 py-[6px] text-xs font-medium rounded border border-border bg-background text-muted-foreground cursor-pointer transition-all duration-200 hover:bg-muted hover:border-ring hover:text-foreground active:bg-secondary">Clear All</button>
         </div>
-        <div id="history-list" class="history-list">
-          <p class="empty-state">No formatting history yet</p>
+        <div id="history-list" class="bg-muted border border-border rounded-lg p-[15px] max-h-[300px] overflow-y-auto">
+          <p class="text-center text-muted-foreground text-sm py-5 m-0">No formatting history yet</p>
         </div>
       </div>
 
-      <!-- Sign Out Button -->
-      <button id="sign-out-btn" class="button secondary">Sign Out</button>
+        <!-- Sign Out Button -->
+        <button id="sign-out-btn" class="bg-background text-muted-foreground w-full border border-border px-5 py-[10px] text-sm font-medium rounded cursor-pointer transition-all duration-200 mt-5 hover:bg-muted hover:border-ring hover:text-foreground active:bg-secondary">Sign Out</button>
+      </div>
     </div>
 
     <script src="./src/popup.js" type="module"></script>

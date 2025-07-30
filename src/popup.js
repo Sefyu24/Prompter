@@ -215,15 +215,15 @@ document.addEventListener("DOMContentLoaded", async function () {
     const templatesList = document.getElementById("templates-list");
     
     if (templates.length === 0) {
-      templatesList.innerHTML = '<p class="empty-state">No templates yet. Create your first template!</p>';
+      templatesList.innerHTML = '<p class="text-center text-muted-foreground text-sm py-5 m-0">No templates yet. Create your first template!</p>';
       return;
     }
 
     // Build HTML for templates
     const templatesHTML = templates.map(template => `
-      <div class="template-item" data-template-id="${template.id}">
-        <div class="template-name">${template.name}</div>
-        ${template.description ? `<div class="template-description">${template.description}</div>` : ''}
+      <div class="bg-background border border-border rounded-md p-3 mb-[10px] cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-template-id="${template.id}">
+        <div class="font-medium text-foreground mb-1">${template.name}</div>
+        ${template.description ? `<div class="text-xs text-muted-foreground">${template.description}</div>` : ''}
       </div>
     `).join('');
 
@@ -258,7 +258,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     const historyList = document.getElementById("history-list");
     
     if (history.length === 0) {
-      historyList.innerHTML = '<p class="empty-state">No formatting history yet</p>';
+      historyList.innerHTML = '<p class="text-center text-muted-foreground text-sm py-5 m-0">No formatting history yet</p>';
       return;
     }
 
@@ -270,27 +270,27 @@ document.addEventListener("DOMContentLoaded", async function () {
         : item.inputText;
       
       return `
-        <div class="history-item" data-history-id="${item.id}">
-          <div class="history-header" data-toggle-id="${item.id}">
-            <div class="history-info">
-              <div class="history-template">${item.templateName}</div>
-              <div class="history-preview">${preview}</div>
-              <div class="history-meta">
-                <span class="history-domain">${item.domain}</span>
-                <span class="history-time">${timeAgo}</span>
+        <div class="bg-background border border-border rounded-md mb-[10px] overflow-hidden transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-history-id="${item.id}">
+          <div class="flex items-center justify-between p-3 cursor-pointer hover:bg-muted transition-colors duration-200" data-toggle-id="${item.id}">
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-primary text-sm mb-1">${item.templateName}</div>
+              <div class="text-xs text-foreground mb-[6px] line-clamp-2 leading-[1.3] break-words overflow-hidden">${preview}</div>
+              <div class="flex gap-3 text-[11px] text-muted-foreground">
+                <span class="bg-accent text-accent-foreground px-[6px] py-[2px] rounded-sm font-medium">${item.domain}</span>
+                <span class="text-muted-foreground">${timeAgo}</span>
               </div>
             </div>
-            <div class="history-toggle">▼</div>
+            <div class="text-muted-foreground text-xs ml-2 transition-transform duration-200">▼</div>
           </div>
-          <div class="history-content" style="display: none;">
-            <div class="history-section">
-              <strong>Input:</strong>
-              <div class="history-text">${item.inputText}</div>
+          <div class="hidden border-t border-border p-[15px] bg-muted/50">
+            <div class="mb-[15px] last:mb-0">
+              <div class="block mb-2 text-xs text-foreground font-semibold">Input:</div>
+              <div class="bg-background border border-border rounded p-[10px] text-[11px] leading-[1.4] text-foreground whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto font-mono">${item.inputText}</div>
             </div>
-            <div class="history-section">
-              <strong>Output:</strong>
-              <div class="history-text">${item.outputText}</div>
-              <button class="copy-btn" data-copy-id="${item.id}" data-copy-text="${escapeQuotes(item.outputText)}">
+            <div class="mb-[15px] last:mb-0">
+              <div class="block mb-2 text-xs text-foreground font-semibold">Output:</div>
+              <div class="bg-background border border-border rounded p-[10px] text-[11px] leading-[1.4] text-foreground whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto font-mono">${item.outputText}</div>
+              <button class="mt-2 px-3 py-[6px] bg-primary text-primary-foreground border-none rounded text-[11px] font-medium cursor-pointer transition-all duration-200 hover:bg-primary/90 active:bg-primary/80" data-copy-id="${item.id}" data-copy-text="${escapeQuotes(item.outputText)}">
                 Copy Output
               </button>
             </div>
@@ -302,7 +302,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     historyList.innerHTML = historyHTML;
 
     // Add event listeners for toggle functionality
-    const toggleButtons = historyList.querySelectorAll('.history-header[data-toggle-id]');
+    const toggleButtons = historyList.querySelectorAll('[data-toggle-id]');
     toggleButtons.forEach(button => {
       button.addEventListener('click', (e) => {
         const itemId = button.getAttribute('data-toggle-id');
@@ -325,14 +325,16 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Toggle history item expansion
   function toggleHistoryItem(itemId) {
     const item = document.querySelector(`[data-history-id="${itemId}"]`);
-    const content = item.querySelector('.history-content');
-    const toggle = item.querySelector('.history-toggle');
+    const content = item.querySelector('.hidden, .block');
+    const toggle = item.querySelector('.text-xs.ml-2');
     
-    if (content.style.display === 'none') {
-      content.style.display = 'block';
+    if (content.classList.contains('hidden')) {
+      content.classList.remove('hidden');
+      content.classList.add('block');
       toggle.textContent = '▲';
     } else {
-      content.style.display = 'none';
+      content.classList.remove('block');
+      content.classList.add('hidden');
       toggle.textContent = '▼';
     }
   }
@@ -348,11 +350,13 @@ document.addEventListener("DOMContentLoaded", async function () {
       const copyBtn = document.querySelector(`[data-copy-id="${itemId}"]`);
       const originalText = copyBtn.textContent;
       copyBtn.textContent = 'Copied!';
-      copyBtn.style.backgroundColor = '#4CAF50';
+      copyBtn.classList.remove('bg-primary', 'hover:bg-primary/90');
+      copyBtn.classList.add('bg-green-500', 'hover:bg-green-600');
       
       setTimeout(() => {
         copyBtn.textContent = originalText;
-        copyBtn.style.backgroundColor = '';
+        copyBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
+        copyBtn.classList.add('bg-primary', 'hover:bg-primary/90');
       }, 2000);
     } catch (error) {
       console.error('Failed to copy:', error);
@@ -404,14 +408,14 @@ document.addEventListener("DOMContentLoaded", async function () {
   }
 
   function showHomePage() {
-    document.getElementById("Login-page").style.display = "none";
-    document.getElementById("user-dashboard").style.display = "block";
+    document.getElementById("Login-page").classList.add("hidden");
+    document.getElementById("user-dashboard").classList.remove("hidden");
     loadDashboard();
   }
 
   function showLoginPage() {
-    document.getElementById("Login-page").style.display = "block";
-    document.getElementById("user-dashboard").style.display = "none";
+    document.getElementById("Login-page").classList.remove("hidden");
+    document.getElementById("user-dashboard").classList.add("hidden");
   }
 
   function showError(message) {
