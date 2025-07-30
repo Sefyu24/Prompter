@@ -290,7 +290,7 @@ document.addEventListener("DOMContentLoaded", async function () {
             <div class="mb-[15px] last:mb-0">
               <div class="block mb-2 text-xs text-foreground font-semibold">Output:</div>
               <div class="bg-background border border-border rounded p-[10px] text-[11px] leading-[1.4] text-foreground whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto font-mono">${item.outputText}</div>
-              <button class="mt-2 px-3 py-[6px] bg-primary text-primary-foreground border-none rounded text-[11px] font-medium cursor-pointer transition-all duration-200 hover:bg-primary/90 active:bg-primary/80" data-copy-id="${item.id}" data-copy-text="${escapeQuotes(item.outputText)}">
+              <button class="copy-btn mt-2 px-3 py-[6px] bg-primary text-primary-foreground border-none rounded text-[11px] font-medium cursor-pointer transition-all duration-200 hover:bg-primary/90 active:bg-primary/80" data-copy-id="${item.id}">
                 Copy Output
               </button>
             </div>
@@ -316,8 +316,11 @@ document.addEventListener("DOMContentLoaded", async function () {
       button.addEventListener('click', (e) => {
         e.stopPropagation(); // Prevent triggering toggle
         const itemId = button.getAttribute('data-copy-id');
-        const text = button.getAttribute('data-copy-text');
-        copyToClipboard(itemId, text);
+        // Find the corresponding history item and get the actual output text
+        const historyItem = history.find(item => item.id.toString() === itemId);
+        if (historyItem) {
+          copyToClipboard(itemId, historyItem.outputText);
+        }
       });
     });
   }
@@ -342,9 +345,8 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Copy text to clipboard
   async function copyToClipboard(itemId, text) {
     try {
-      // Unescape the text
-      const unescapedText = text.replace(/\\'/g, "'").replace(/\\"/g, '"');
-      await navigator.clipboard.writeText(unescapedText);
+      // Copy the original text without any escaping since we're getting it directly from the data
+      await navigator.clipboard.writeText(text);
       
       // Show feedback
       const copyBtn = document.querySelector(`[data-copy-id="${itemId}"]`);
@@ -364,10 +366,6 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
   }
 
-  // Helper function to escape quotes for HTML attributes
-  function escapeQuotes(text) {
-    return text.replace(/'/g, "\\'").replace(/"/g, '\\"');
-  }
 
   // Helper function to get time ago string
   function getTimeAgo(timestamp) {

@@ -38,6 +38,53 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 /**
+ * Ensures we have a valid session by refreshing if needed
+ * @async
+ * @returns {Promise<void>}
+ */
+async function ensureValidSession() {
+  try {
+    const { session } = await chrome.storage.local.get(["session"]);
+    
+    if (!session) {
+      console.log("No session found in storage");
+      return;
+    }
+
+    // Try to refresh the session using the refresh token
+    const { data, error } = await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+
+    if (error) {
+      console.log("Session refresh failed:", error);
+      // Clear invalid session
+      await chrome.storage.local.remove(["session"]);
+      currentUser = null;
+      userTemplates = [];
+      throw new Error("You need to be authenticated first");
+    }
+
+    // Update session if it was refreshed
+    if (data.session && data.session.access_token !== session.access_token) {
+      console.log("Session refreshed, updating storage");
+      await chrome.storage.local.set({ session: data.session });
+    }
+
+    // Update current user if needed
+    if (data.user) {
+      currentUser = data.user;
+      console.log("Current user updated:", data.user.email);
+    }
+
+  } catch (error) {
+    console.error("Error ensuring valid session:", error);
+    throw error;
+  }
+}
+
+/**
  * Loads the current user's data and templates from Supabase
  * @async
  * @returns {Promise<void>}
@@ -191,6 +238,27 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     console.log("Current userTemplates count:", userTemplates.length);
     console.log("Current user:", currentUser?.email || "Not logged in");
 
+    try {
+      // Ensure valid session first
+      await ensureValidSession();
+      
+      if (!currentUser) {
+        console.error("No user authenticated");
+        chrome.tabs.sendMessage(tab.id, {
+          action: "showError",
+          message: "You need to be authenticated first",
+        });
+        return;
+      }
+    } catch (error) {
+      console.error("Authentication check failed:", error);
+      chrome.tabs.sendMessage(tab.id, {
+        action: "showError",
+        message: "You need to be authenticated first",
+      });
+      return;
+    }
+
     // Find the template in current cache
     let template = userTemplates.find((t) => t.id === templateId);
 
@@ -288,11 +356,23 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
  */
 async function formatTextWithTemplate(text, template, user) {
   try {
+    // Ensure we have valid session and user state
+    await ensureValidSession();
+    
     // Get the current session to extract JWT token
     const { session } = await chrome.storage.local.get(["session"]);
 
     if (!session || !session.access_token) {
-      throw new Error("No valid session found");
+      throw new Error("You need to be authenticated first");
+    }
+
+    // Double-check user is still logged in
+    if (!currentUser) {
+      console.log("Current user lost, reloading user data...");
+      await loadUserData();
+      if (!currentUser) {
+        throw new Error("You need to be authenticated first");
+      }
     }
 
     // Call your backend API instead of OpenAI directly
@@ -525,12 +605,24 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     console.log("Current user:", currentUser?.email || "Not logged in");
     console.log("Available templates:", userTemplates?.length || 0);
     
-    // Check if user is logged in
-    if (!currentUser) {
-      console.log("User not logged in, cannot show modal");
+    try {
+      // Ensure valid session first
+      await ensureValidSession();
+      
+      // Check if user is logged in after ensuring session
+      if (!currentUser) {
+        console.log("User not logged in, cannot show modal");
+        chrome.tabs.sendMessage(tab.id, {
+          action: "showKeyboardModal",
+          error: "You need to be authenticated first"
+        });
+        return;
+      }
+    } catch (error) {
+      console.error("Authentication check failed:", error);
       chrome.tabs.sendMessage(tab.id, {
         action: "showKeyboardModal",
-        error: "Please log in to use Prompter"
+        error: "You need to be authenticated first"
       });
       return;
     }
@@ -572,24 +664,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
-    // Check if user is logged in
-    if (!currentUser) {
-      console.error("No current user found");
-      sendResponse({ error: "User not logged in" });
-      return true;
-    }
-
-    // Find the template
-    const template = userTemplates.find(t => t.id === templateId);
-    if (!template) {
-      console.error("Template not found:", templateId);
-      sendResponse({ error: "Template not found" });
-      return true;
-    }
-
     // Process the formatting asynchronously
     (async () => {
       try {
+        // Ensure valid session first
+        await ensureValidSession();
+        
+        // Check if user is logged in after ensuring session
+        if (!currentUser) {
+          console.error("No current user found after session check");
+          sendResponse({ error: "You need to be authenticated first" });
+          return;
+        }
+
+        // Find the template
+        const template = userTemplates.find(t => t.id === templateId);
+        if (!template) {
+          console.error("Template not found:", templateId);
+          sendResponse({ error: "Template not found" });
+          return;
+        }
+
         console.log("Starting text formatting...");
         
         // Format the text using the existing function
