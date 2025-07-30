@@ -1,6 +1,6 @@
-import { supabase } from './supabase.js';
-import { config } from './config.js';
-import stringify from 'json-stringify-pretty-compact';
+import { supabase } from "./supabase.js";
+import { config } from "./config.js";
+import stringify from "json-stringify-pretty-compact";
 
 // Context menu setup
 let userTemplates = [];
@@ -8,14 +8,14 @@ let currentUser = null;
 
 // Initialize context menu when extension loads
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log('Extension installed/loaded');
+  console.log("Extension installed/loaded");
   await loadUserData(); // Load user data FIRST
   // Context menu will be created by loadUserData() if user is logged in
 });
 
 // Listen for user session changes
 chrome.storage.onChanged.addListener(async (changes, namespace) => {
-  if (namespace === 'local' && changes.session) {
+  if (namespace === "local" && changes.session) {
     if (changes.session.newValue) {
       await loadUserData();
       await updateContextMenu();
@@ -30,7 +30,7 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
 
 // Load user data on startup
 chrome.runtime.onStartup.addListener(async () => {
-  const { session } = await chrome.storage.local.get(['session']);
+  const { session } = await chrome.storage.local.get(["session"]);
   if (session) {
     await loadUserData();
     await updateContextMenu();
@@ -44,17 +44,17 @@ chrome.runtime.onStartup.addListener(async () => {
  */
 async function loadUserData() {
   try {
-    console.log('Loading user data...');
-    const { session } = await chrome.storage.local.get(['session']);
-    
+    console.log("Loading user data...");
+    const { session } = await chrome.storage.local.get(["session"]);
+
     if (!session) {
-      console.log('No session found, creating context menu without templates');
+      console.log("No session found, creating context menu without templates");
       // Create context menu without templates if user not logged in
       await createContextMenuWithTemplates();
       return;
     }
 
-    console.log('Session found, restoring user session');
+    console.log("Session found, restoring user session");
     // Set the session in Supabase
     await supabase.auth.setSession({
       access_token: session.access_token,
@@ -62,28 +62,31 @@ async function loadUserData() {
     });
 
     // Get current user
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
     if (userError) throw userError;
-    
+
     currentUser = user;
-    console.log('Current user:', user.email);
+    console.log("Current user:", user.email);
 
     // Load user's templates
     const { data: templates, error: templatesError } = await supabase
-      .from('templates')
-      .select('*')
-      .eq('created_by', user.id)
-      .order('created_at', { ascending: false });
+      .from("templates")
+      .select("*")
+      .eq("created_by", user.id)
+      .order("created_at", { ascending: false });
 
     if (templatesError) throw templatesError;
-    
+
     userTemplates = templates || [];
-    console.log('Loaded templates:', userTemplates.length, 'templates');
-    
+    console.log("Loaded templates:", userTemplates.length, "templates");
+
     // Update context menu after loading templates
     await updateContextMenu();
   } catch (error) {
-    console.error('Error loading user data:', error);
+    console.error("Error loading user data:", error);
     // Fallback: create context menu without templates
     userTemplates = [];
     currentUser = null;
@@ -100,50 +103,59 @@ async function createContextMenuWithTemplates() {
     // First, remove all existing menus
     chrome.contextMenus.removeAll(() => {
       // Create parent menu item
-      chrome.contextMenus.create({
-        id: 'prompter-format',
-        title: 'Format prompt with Prompter',
-        contexts: ['selection']
-      }, () => {
-        // Parent created, now add children
-        if (userTemplates.length > 0) {
-          // Add separator
-          chrome.contextMenus.create({
-            id: 'prompter-separator',
-            type: 'separator',
-            parentId: 'prompter-format',
-            contexts: ['selection']
-          });
-
-          // Track templates added
-          let templatesAdded = 0;
-          
-          // Add template options
-          userTemplates.forEach((template) => {
+      chrome.contextMenus.create(
+        {
+          id: "prompter-format",
+          title: "Format prompt with Prompter",
+          contexts: ["selection"],
+        },
+        () => {
+          // Parent created, now add children
+          if (userTemplates.length > 0) {
+            // Add separator
             chrome.contextMenus.create({
-              id: `template-${template.id}`,
-              title: template.name,
-              parentId: 'prompter-format',
-              contexts: ['selection']
-            }, () => {
-              templatesAdded++;
-              // Resolve when all templates are added
-              if (templatesAdded === userTemplates.length) {
-                resolve();
-              }
+              id: "prompter-separator",
+              type: "separator",
+              parentId: "prompter-format",
+              contexts: ["selection"],
             });
-          });
-        } else {
-          // No templates message
-          chrome.contextMenus.create({
-            id: 'no-templates',
-            title: 'No templates available',
-            parentId: 'prompter-format',
-            contexts: ['selection'],
-            enabled: false
-          }, resolve);
+
+            // Track templates added
+            let templatesAdded = 0;
+
+            // Add template options
+            userTemplates.forEach((template) => {
+              chrome.contextMenus.create(
+                {
+                  id: `template-${template.id}`,
+                  title: template.name,
+                  parentId: "prompter-format",
+                  contexts: ["selection"],
+                },
+                () => {
+                  templatesAdded++;
+                  // Resolve when all templates are added
+                  if (templatesAdded === userTemplates.length) {
+                    resolve();
+                  }
+                }
+              );
+            });
+          } else {
+            // No templates message
+            chrome.contextMenus.create(
+              {
+                id: "no-templates",
+                title: "No templates available",
+                parentId: "prompter-format",
+                contexts: ["selection"],
+                enabled: false,
+              },
+              resolve
+            );
+          }
         }
-      });
+      );
     });
   });
 }
@@ -168,162 +180,156 @@ async function updateContextMenu() {
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId.startsWith('template-')) {
-    const templateId = info.menuItemId.replace('template-', '');
+  if (info.menuItemId.startsWith("template-")) {
+    const templateId = info.menuItemId.replace("template-", "");
     const selectedText = info.selectionText;
-    
-    console.log('Context menu clicked for template:', templateId);
-    console.log('Current userTemplates count:', userTemplates.length);
-    console.log('Current user:', currentUser?.email || 'Not logged in');
-    
+
+    console.log("Context menu clicked for template:", templateId);
+    console.log("Current userTemplates count:", userTemplates.length);
+    console.log("Current user:", currentUser?.email || "Not logged in");
+
     // Find the template in current cache
-    let template = userTemplates.find(t => t.id === templateId);
-    
+    let template = userTemplates.find((t) => t.id === templateId);
+
     // If template not found, try reloading user data (service worker might have restarted)
     if (!template) {
-      console.log('Template not found in cache, reloading user data...');
+      console.log("Template not found in cache, reloading user data...");
       await loadUserData();
-      template = userTemplates.find(t => t.id === templateId);
-      console.log('After reload, userTemplates count:', userTemplates.length);
+      template = userTemplates.find((t) => t.id === templateId);
+      console.log("After reload, userTemplates count:", userTemplates.length);
     }
-    
+
     // If still not found, fetch directly from database
     if (!template) {
-      console.log('Template still not found, fetching from database...');
+      console.log("Template still not found, fetching from database...");
       try {
         const { data, error } = await supabase
-          .from('templates')
-          .select('*')
-          .eq('id', templateId)
+          .from("templates")
+          .select("*")
+          .eq("id", templateId)
           .single();
-          
+
         if (error) throw error;
         template = data;
       } catch (error) {
-        console.error('Failed to fetch template from database:', error);
-        chrome.tabs.sendMessage(tab.id, { 
-          action: 'showError', 
-          message: 'Template not found. Please refresh and try again.' 
+        console.error("Failed to fetch template from database:", error);
+        chrome.tabs.sendMessage(tab.id, {
+          action: "showError",
+          message: "Template not found. Please refresh and try again.",
         });
         return;
       }
     }
-    
+
     if (!template) {
-      console.error('Template not found:', templateId);
-      chrome.tabs.sendMessage(tab.id, { 
-        action: 'showError', 
-        message: 'Template not found. Please refresh and try again.' 
+      console.error("Template not found:", templateId);
+      chrome.tabs.sendMessage(tab.id, {
+        action: "showError",
+        message: "Template not found. Please refresh and try again.",
       });
       return;
     }
 
     // Send message to content script to show loading
-    chrome.tabs.sendMessage(tab.id, { action: 'showLoading' });
+    chrome.tabs.sendMessage(tab.id, { action: "showLoading" });
 
     try {
       // Format the text using the template
-      const formattedText = await formatTextWithTemplate(selectedText, template, currentUser);
-      
+      const formattedText = await formatTextWithTemplate(
+        selectedText,
+        template,
+        currentUser
+      );
+
       // Send formatted text back to content script
-      chrome.tabs.sendMessage(tab.id, { 
-        action: 'replaceText', 
-        newText: formattedText 
+      chrome.tabs.sendMessage(tab.id, {
+        action: "replaceText",
+        newText: formattedText,
       });
 
       // Track the formatting request
-      await trackFormattingRequest(currentUser.id, templateId, selectedText, formattedText);
-      
+      await trackFormattingRequest(
+        currentUser.id,
+        templateId,
+        selectedText,
+        formattedText
+      );
     } catch (error) {
-      console.error('Error formatting text:', error);
-      chrome.tabs.sendMessage(tab.id, { 
-        action: 'showError', 
-        message: 'Failed to format text' 
+      console.error("Error formatting text:", error);
+      chrome.tabs.sendMessage(tab.id, {
+        action: "showError",
+        message: "Failed to format text",
       });
     }
   }
 });
 
 /**
- * Formats the selected text using the specified template
+ * Formats the selected text using the backend API
  * @async
  * @param {string} text - The text to format
- * @param {Object} template - The template object containing prompt_template
+ * @param {Object} template - The template object containing id
  * @param {Object} user - The current user object
  * @returns {Promise<string>} The formatted text
  */
 async function formatTextWithTemplate(text, template, user) {
   try {
-    // Replace placeholder in template with actual text
-    const prompt = template.prompt_template.replace('{text}', text);
-    
-    // Call OpenAI API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
+    // Get the current session to extract JWT token
+    const { session } = await chrome.storage.local.get(["session"]);
+
+    if (!session || !session.access_token) {
+      throw new Error("No valid session found");
+    }
+
+    // Call your backend API instead of OpenAI directly
+    const response = await fetch("http://localhost:3000/api/format", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.openaiApiKey}`
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
-        model: config.openaiModel,
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a helpful assistant that formats text according to templates. Return only the formatted text without any additional explanation.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: config.maxTokens
-      })
+        templateId: template.id,
+        userText: text,
+      }),
     });
 
     if (!response.ok) {
-      const errorBody = await response.text();
-      console.error('OpenAI API Error Details:', {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorBody
-      });
-      throw new Error(`OpenAI API error: ${response.status} - ${errorBody}`);
+      const errorData = await response.json();
+      throw new Error(
+        `Backend API error: ${response.status} - ${
+          errorData.error || "Unknown error"
+        }`
+      );
     }
 
     const data = await response.json();
-    let formattedText = data.choices[0].message.content.trim();
-    
-    // Debug: Log the raw response (remove in production)
-    console.log('OpenAI raw response length:', formattedText.length);
-    
-    // Try to format JSON if the response looks like JSON
+    let formattedText = data.formattedText;
+
+    // Keep your existing JSON formatting logic
     try {
-      // Check if the response starts and ends with JSON brackets/braces
-      if ((formattedText.startsWith('{') && formattedText.endsWith('}')) || 
-          (formattedText.startsWith('[') && formattedText.endsWith(']'))) {
+      if (
+        (formattedText.startsWith("{") && formattedText.endsWith("}")) ||
+        (formattedText.startsWith("[") && formattedText.endsWith("]"))
+      ) {
         const jsonObject = JSON.parse(formattedText);
-        
-        // Use json-stringify-pretty-compact for better formatting
         formattedText = stringify(jsonObject, {
-          maxLength: 80,  // Line length before wrapping
-          indent: 2       // 2-space indentation
+          maxLength: 80,
+          indent: 2,
         });
-        console.log('JSON formatted successfully');
-      } else {
-        console.log('Response does not look like JSON, returning as-is');
+        console.log("JSON formatted successfully");
       }
     } catch (jsonError) {
-      // If it's not valid JSON, just return the original formatted text
-      console.log('JSON parsing failed:', jsonError.message);
-      console.log('Response is not valid JSON, returning as-is');
+      console.log("Response is not valid JSON, returning as-is");
     }
-    
+
     return formattedText;
   } catch (error) {
-    console.error('Error calling OpenAI API:', error);
+    console.error("Error calling backend API:", error);
     // Fallback to simple template replacement
-    return template.prompt_template.replace('{text}', text);
+    return template.prompt_template
+      ? template.prompt_template.replace("{text}", text)
+      : text;
   }
 }
 
@@ -336,35 +342,52 @@ async function formatTextWithTemplate(text, template, user) {
  * @param {string} outputText - The formatted text
  * @returns {Promise<void>}
  */
-async function trackFormattingRequest(userId, templateId, inputText, outputText) {
+async function trackFormattingRequest(
+  userId,
+  templateId,
+  inputText,
+  outputText
+) {
   try {
-    const { error } = await supabase
-      .from('formatting_requests')
-      .insert({
-        user_id: userId,
-        template_id: templateId,
-        input_text: inputText,
-        output_text: outputText
-      });
+    const { error } = await supabase.from("formatting_requests").insert({
+      user_id: userId,
+      template_id: templateId,
+      input_text: inputText,
+      output_text: outputText,
+    });
 
     if (error) throw error;
-    console.log('Tracked formatting request');
+    console.log("Tracked formatting request");
   } catch (error) {
-    console.error('Error tracking request:', error);
+    console.error("Error tracking request:", error);
   }
 }
 
-// add tab listener when background script starts
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  // Only log when there's an actual URL change (not undefined)
   if (changeInfo.url) {
-    console.log('Tab updated:', changeInfo.url);
+    console.log("Tab updated:", changeInfo.url);
   }
-  
-  // Check for both extension redirect URL and localhost callback
-  if (changeInfo.url?.startsWith(chrome.identity.getRedirectURL()) || 
-      changeInfo.url?.startsWith('http://localhost:3000/#access_token=')) {
-    console.log('OAuth callback detected!');
+
+  // Check for auth success page with tokens in hash
+  if (
+    changeInfo.url?.includes("/auth/success#access_token=") ||
+    changeInfo.url?.startsWith(
+      "http://localhost:3000/auth/success#access_token="
+    ) ||
+    changeInfo.url?.startsWith(
+      "http://localhost:3001/auth/success#access_token="
+    )
+  ) {
+    console.log("OAuth callback detected on success page!");
+    finishUserOAuth(changeInfo.url);
+  }
+
+  // Keep existing checks as fallback
+  if (
+    changeInfo.url?.startsWith(chrome.identity.getRedirectURL()) ||
+    changeInfo.url?.startsWith("http://localhost:3000/#access_token=")
+  ) {
+    console.log("OAuth callback detected!");
     finishUserOAuth(changeInfo.url);
   }
 });
