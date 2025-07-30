@@ -31,5 +31,15 @@
 
   "action": {
     "default_popup": "popup.html"
+  },
+
+  "commands": {
+    "format-prompt": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "Command+Shift+P"
+      },
+      "description": "Format selected text with Prompter"
+    }
   }
 }

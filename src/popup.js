@@ -230,10 +230,22 @@ document.addEventListener("DOMContentLoaded", async function () {
     templatesList.innerHTML = templatesHTML;
   }
 
-  // Load and display formatting history
+  // Load and display formatting history for current user
   async function loadHistory() {
     try {
-      const { formatting_history: history = [] } = await chrome.storage.local.get(['formatting_history']);
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.log("No user found, skipping history load");
+        displayHistory([]);
+        return;
+      }
+
+      // Load user-specific history
+      const historyKey = `formatting_history_${user.id}`;
+      const result = await chrome.storage.local.get([historyKey]);
+      const history = result[historyKey] || [];
+      
       displayHistory(history);
     } catch (error) {
       console.error("Error loading history:", error);
@@ -367,13 +379,23 @@ document.addEventListener("DOMContentLoaded", async function () {
     return `${days}d ago`;
   }
 
-  // Clear all history
+  // Clear all history for current user
   async function clearAllHistory() {
     if (confirm('Are you sure you want to clear all formatting history?')) {
       try {
-        await chrome.storage.local.remove(['formatting_history']);
+        // Get current user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          console.log("No user found, cannot clear history");
+          alert('Please log in to clear history');
+          return;
+        }
+
+        // Clear user-specific history
+        const historyKey = `formatting_history_${user.id}`;
+        await chrome.storage.local.remove([historyKey]);
         displayHistory([]);
-        console.log('History cleared');
+        console.log('History cleared for user:', user.id);
       } catch (error) {
         console.error('Error clearing history:', error);
         alert('Failed to clear history');

@@ -23,7 +23,6 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
       // User logged out
       currentUser = null;
       userTemplates = [];
-      await clearHistory(); // Clear history on logout
       updateContextMenu();
     }
   }
@@ -83,6 +82,9 @@ async function loadUserData() {
 
     userTemplates = templates || [];
     console.log("Loaded templates:", userTemplates.length, "templates");
+
+    // Migrate old history format if needed
+    await migrateOldHistory(user.id);
 
     // Update context menu after loading templates
     await updateContextMenu();
@@ -263,7 +265,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         template.name,
         selectedText,
         formattedText,
-        domain
+        domain,
+        currentUser.id
       );
     } catch (error) {
       console.error("Error formatting text:", error);
@@ -382,10 +385,16 @@ async function trackFormattingRequest(
  * @param {string} inputText - The original text
  * @param {string} outputText - The formatted text
  * @param {string} domain - The domain where it was used
+ * @param {string} userId - The user's ID
  * @returns {Promise<void>}
  */
-async function saveToHistory(templateId, templateName, inputText, outputText, domain) {
+async function saveToHistory(templateId, templateName, inputText, outputText, domain, userId) {
   try {
+    if (!userId) {
+      console.warn("Cannot save history: No user ID provided");
+      return;
+    }
+
     const timestamp = Date.now();
     const historyItem = {
       id: timestamp,
@@ -394,11 +403,16 @@ async function saveToHistory(templateId, templateName, inputText, outputText, do
       templateName: templateName,
       templateId: templateId,
       timestamp: timestamp,
-      domain: domain
+      domain: domain,
+      userId: userId
     };
 
-    // Get existing history
-    const { formatting_history: existingHistory = [] } = await chrome.storage.local.get(['formatting_history']);
+    // Use user-specific storage key
+    const historyKey = `formatting_history_${userId}`;
+    
+    // Get existing history for this user
+    const result = await chrome.storage.local.get([historyKey]);
+    const existingHistory = result[historyKey] || [];
     
     // Add new item to the beginning
     const updatedHistory = [historyItem, ...existingHistory];
@@ -406,26 +420,101 @@ async function saveToHistory(templateId, templateName, inputText, outputText, do
     // Limit to 50 items
     const limitedHistory = updatedHistory.slice(0, 50);
     
-    // Save back to storage
-    await chrome.storage.local.set({ formatting_history: limitedHistory });
+    // Save back to storage with user-specific key
+    await chrome.storage.local.set({ [historyKey]: limitedHistory });
     
-    console.log("Saved to history:", historyItem.templateName);
+    console.log("Saved to user history:", historyItem.templateName, "for user:", userId);
   } catch (error) {
     console.error("Error saving to history:", error);
   }
 }
 
 /**
- * Clears the formatting history from local storage
+ * Clears the formatting history from local storage for a specific user
  * @async
+ * @param {string} userId - The user's ID (optional, uses current user if not provided)
  * @returns {Promise<void>}
  */
-async function clearHistory() {
+async function clearHistory(userId = null) {
   try {
-    await chrome.storage.local.remove(['formatting_history']);
-    console.log("History cleared");
+    const targetUserId = userId || currentUser?.id;
+    if (!targetUserId) {
+      console.warn("Cannot clear history: No user ID provided");
+      return;
+    }
+
+    const historyKey = `formatting_history_${targetUserId}`;
+    await chrome.storage.local.remove([historyKey]);
+    console.log("History cleared for user:", targetUserId);
   } catch (error) {
     console.error("Error clearing history:", error);
+  }
+}
+
+/**
+ * Gets the formatting history for a specific user
+ * @async
+ * @param {string} userId - The user's ID
+ * @returns {Promise<Array>} The user's formatting history
+ */
+async function getUserHistory(userId) {
+  try {
+    if (!userId) {
+      console.warn("Cannot get history: No user ID provided");
+      return [];
+    }
+
+    const historyKey = `formatting_history_${userId}`;
+    const result = await chrome.storage.local.get([historyKey]);
+    return result[historyKey] || [];
+  } catch (error) {
+    console.error("Error getting user history:", error);
+    return [];
+  }
+}
+
+/**
+ * Migrates old formatting_history to user-specific format
+ * @async
+ * @param {string} userId - The current user's ID
+ * @returns {Promise<void>}
+ */
+async function migrateOldHistory(userId) {
+  try {
+    if (!userId) return;
+
+    // Check if old history exists
+    const { formatting_history: oldHistory } = await chrome.storage.local.get(['formatting_history']);
+    if (!oldHistory || oldHistory.length === 0) return;
+
+    console.log("Migrating old history to user-specific format for user:", userId);
+
+    // Check if user already has history (don't overwrite)
+    const userHistoryKey = `formatting_history_${userId}`;
+    const { [userHistoryKey]: existingUserHistory } = await chrome.storage.local.get([userHistoryKey]);
+    
+    if (existingUserHistory && existingUserHistory.length > 0) {
+      console.log("User already has history, skipping migration");
+      // Remove old history since it's no longer needed
+      await chrome.storage.local.remove(['formatting_history']);
+      return;
+    }
+
+    // Migrate old history to user-specific key
+    const migratedHistory = oldHistory.map(item => ({
+      ...item,
+      userId: userId // Add userId to existing items
+    }));
+
+    // Save to user-specific key
+    await chrome.storage.local.set({ [userHistoryKey]: migratedHistory });
+    
+    // Remove old history
+    await chrome.storage.local.remove(['formatting_history']);
+    
+    console.log(`Migrated ${migratedHistory.length} history items for user:`, userId);
+  } catch (error) {
+    console.error("Error migrating old history:", error);
   }
 }
 
