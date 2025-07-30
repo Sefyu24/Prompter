@@ -23,6 +23,7 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
       // User logged out
       currentUser = null;
       userTemplates = [];
+      await clearHistory(); // Clear history on logout
       updateContextMenu();
     }
   }
@@ -254,6 +255,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         selectedText,
         formattedText
       );
+
+      // Save to local history
+      const domain = new URL(tab.url).hostname;
+      await saveToHistory(
+        templateId,
+        template.name,
+        selectedText,
+        formattedText,
+        domain
+      );
     } catch (error) {
       console.error("Error formatting text:", error);
       chrome.tabs.sendMessage(tab.id, {
@@ -360,6 +371,61 @@ async function trackFormattingRequest(
     console.log("Tracked formatting request");
   } catch (error) {
     console.error("Error tracking request:", error);
+  }
+}
+
+/**
+ * Saves a formatting request to local history for quick access
+ * @async
+ * @param {string} templateId - The template's ID
+ * @param {string} templateName - The template's name
+ * @param {string} inputText - The original text
+ * @param {string} outputText - The formatted text
+ * @param {string} domain - The domain where it was used
+ * @returns {Promise<void>}
+ */
+async function saveToHistory(templateId, templateName, inputText, outputText, domain) {
+  try {
+    const timestamp = Date.now();
+    const historyItem = {
+      id: timestamp,
+      inputText: inputText,
+      outputText: outputText,
+      templateName: templateName,
+      templateId: templateId,
+      timestamp: timestamp,
+      domain: domain
+    };
+
+    // Get existing history
+    const { formatting_history: existingHistory = [] } = await chrome.storage.local.get(['formatting_history']);
+    
+    // Add new item to the beginning
+    const updatedHistory = [historyItem, ...existingHistory];
+    
+    // Limit to 50 items
+    const limitedHistory = updatedHistory.slice(0, 50);
+    
+    // Save back to storage
+    await chrome.storage.local.set({ formatting_history: limitedHistory });
+    
+    console.log("Saved to history:", historyItem.templateName);
+  } catch (error) {
+    console.error("Error saving to history:", error);
+  }
+}
+
+/**
+ * Clears the formatting history from local storage
+ * @async
+ * @returns {Promise<void>}
+ */
+async function clearHistory() {
+  try {
+    await chrome.storage.local.remove(['formatting_history']);
+    console.log("History cleared");
+  } catch (error) {
+    console.error("Error clearing history:", error);
   }
 }
 
