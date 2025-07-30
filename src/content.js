@@ -7,9 +7,12 @@ let selectedText = "";
 let targetElement = null;
 let selectionRange = null;
 
-// Check if we're on perplexity.ai or t3.chat
+// Check which site we're on for site-specific handling
 const isPerplexity = window.location.hostname === 'www.perplexity.ai';
 const isT3Chat = window.location.hostname === 't3.chat' || window.location.hostname === 'www.t3.chat';
+const isChatGPT = window.location.hostname === 'chat.openai.com' || window.location.hostname === 'chatgpt.com';
+const isClaude = window.location.hostname === 'claude.ai';
+const isGemini = window.location.hostname === 'gemini.google.com';
 
 // Listen for text selection - use multiple events for better compatibility
 const captureSelection = function(e) {
@@ -98,6 +101,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     showNotification("Formatting text...", "info");
   } else if (message.action === "showError") {
     showNotification(message.message, "error");
+  } else if (message.action === "showKeyboardModal") {
+    // Handle keyboard shortcut modal
+    handleKeyboardModal(message);
   }
   
   return true; // Keep message channel open for async responses
@@ -407,4 +413,850 @@ function showNotification(message, type) {
   setTimeout(() => {
     notification.remove();
   }, 3000);
+}
+
+// ===== KEYBOARD MODAL SYSTEM =====
+
+let keyboardModal = null;
+let currentSelectedIndex = 0;
+let filteredTemplates = [];
+let allTemplates = [];
+let modalSelectedText = "";
+let modalTargetElement = null;
+
+/**
+ * Handle keyboard modal message from background script
+ */
+function handleKeyboardModal(message) {
+  // Check if there's an error message
+  if (message.error) {
+    showNotification(message.error, "error");
+    return;
+  }
+
+  // Validate text selection
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
+  
+  if (!selectedText || selectedText.length === 0) {
+    showNotification("Please select text first", "error");
+    return;
+  }
+
+  // Check if selection is in a supported input field
+  const targetElement = findEditableParent(selection.anchorNode);
+  if (!targetElement) {
+    showNotification("Please select text in an input field", "error");
+    return;
+  }
+
+  // Store selection info for later use
+  modalSelectedText = selectedText;
+  modalTargetElement = targetElement;
+  allTemplates = message.templates || [];
+  filteredTemplates = [...allTemplates];
+  currentSelectedIndex = 0;
+
+  // Show the modal
+  showKeyboardModal();
+}
+
+/**
+ * Create and show the keyboard modal
+ */
+function showKeyboardModal() {
+  // Remove existing modal if present
+  if (keyboardModal) {
+    keyboardModal.remove();
+  }
+
+  // Create modal structure
+  keyboardModal = document.createElement('div');
+  keyboardModal.className = 'prompter-modal-overlay';
+  keyboardModal.innerHTML = `
+    <div class="prompter-modal">
+      <div class="prompter-header">
+        <h3>Select Template</h3>
+        <input type="text" class="prompter-search" placeholder="Type to search..." autocomplete="off">
+      </div>
+      <div class="prompter-template-list">
+        ${renderTemplateList()}
+      </div>
+      <div class="prompter-footer">
+        <span class="prompter-hints">↑↓ Navigate • Enter Select • Esc Close • 1-9 Quick Select</span>
+      </div>
+    </div>
+  `;
+
+  // Add styles
+  addModalStyles();
+
+  // Add event listeners
+  addModalEventListeners();
+
+  // Position modal
+  positionModal();
+
+  // Add to page
+  document.body.appendChild(keyboardModal);
+
+  // Focus search input
+  const searchInput = keyboardModal.querySelector('.prompter-search');
+  if (searchInput) {
+    searchInput.focus();
+  }
+}
+
+/**
+ * Render the template list HTML
+ */
+function renderTemplateList() {
+  if (filteredTemplates.length === 0) {
+    return '<div class="prompter-empty">No templates found</div>';
+  }
+
+  return filteredTemplates.map((template, index) => `
+    <div class="prompter-template-item ${index === currentSelectedIndex ? 'selected' : ''}" data-index="${index}">
+      <div class="prompter-template-name">${escapeHtml(template.name)}</div>
+      ${template.description ? `<div class="prompter-template-description">${escapeHtml(template.description)}</div>` : ''}
+      <div class="prompter-template-number">${index + 1}</div>
+    </div>
+  `).join('');
+}
+
+/**
+ * Add modal styles to the page
+ */
+function addModalStyles() {
+  if (document.getElementById('prompter-modal-styles')) {
+    return; // Styles already added
+  }
+
+  const style = document.createElement('style');
+  style.id = 'prompter-modal-styles';
+  style.textContent = `
+    .prompter-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 999999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .prompter-modal {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      width: 90%;
+      max-width: 480px;
+      max-height: 80vh;
+      overflow: hidden;
+      animation: prompter-modal-enter 0.2s ease-out;
+    }
+
+    @keyframes prompter-modal-enter {
+      from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .prompter-header {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .prompter-header h3 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .prompter-search {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+      box-sizing: border-box;
+    }
+
+    .prompter-search:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .prompter-template-list {
+      max-height: 300px;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .prompter-template-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 16px;
+      margin: 4px 0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+
+    .prompter-template-item:hover,
+    .prompter-template-item.selected {
+      background-color: #f3f4f6;
+      border: 1px solid #d1d5db;
+    }
+
+    .prompter-template-item.selected {
+      background-color: #eff6ff;
+      border-color: #3b82f6;
+    }
+
+    .prompter-template-name {
+      font-weight: 500;
+      color: #111827;
+      margin-bottom: 2px;
+      flex: 1;
+    }
+
+    .prompter-template-description {
+      font-size: 13px;
+      color: #6b7280;
+      flex: 1;
+    }
+
+    .prompter-template-number {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: #e5e7eb;
+      color: #6b7280;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 2px 6px;
+      border-radius: 4px;
+      min-width: 16px;
+      text-align: center;
+    }
+
+    .prompter-template-item.selected .prompter-template-number {
+      background: #3b82f6;
+      color: white;
+    }
+
+    .prompter-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: #6b7280;
+      font-size: 14px;
+    }
+
+    .prompter-footer {
+      padding: 12px 20px;
+      background: #f9fafb;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .prompter-hints {
+      font-size: 12px;
+      color: #6b7280;
+      text-align: center;
+      display: block;
+    }
+  `;
+  
+  document.head.appendChild(style);
+}
+
+/**
+ * Add event listeners to the modal
+ */
+function addModalEventListeners() {
+  if (!keyboardModal) return;
+
+  const searchInput = keyboardModal.querySelector('.prompter-search');
+  
+  // Search input events
+  if (searchInput) {
+    searchInput.addEventListener('input', handleSearch);
+    searchInput.addEventListener('keydown', handleSearchKeydown);
+  }
+
+  // Click outside to close
+  keyboardModal.addEventListener('click', (e) => {
+    if (e.target === keyboardModal) {
+      closeKeyboardModal();
+    }
+  });
+
+  // Template item clicks
+  const templateItems = keyboardModal.querySelectorAll('.prompter-template-item');
+  templateItems.forEach((item, index) => {
+    item.addEventListener('click', () => {
+      selectTemplate(index);
+    });
+  });
+}
+
+/**
+ * Handle search input
+ */
+function handleSearch(e) {
+  const query = e.target.value.toLowerCase().trim();
+  
+  if (query === '') {
+    filteredTemplates = [...allTemplates];
+  } else {
+    filteredTemplates = allTemplates.filter(template => 
+      template.name.toLowerCase().includes(query) ||
+      (template.description && template.description.toLowerCase().includes(query))
+    );
+  }
+  
+  currentSelectedIndex = 0;
+  updateTemplateList();
+}
+
+/**
+ * Handle keydown events in search input
+ */
+function handleSearchKeydown(e) {
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault();
+      moveSelection(1);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      moveSelection(-1);
+      break;
+    case 'Enter':
+      e.preventDefault();
+      selectTemplate(currentSelectedIndex);
+      break;
+    case 'Escape':
+      e.preventDefault();
+      closeKeyboardModal();
+      break;
+    default:
+      // Handle number keys (1-9)
+      if (e.key >= '1' && e.key <= '9') {
+        e.preventDefault();
+        const index = parseInt(e.key) - 1;
+        if (index < filteredTemplates.length) {
+          selectTemplate(index);
+        }
+      }
+      break;
+  }
+}
+
+/**
+ * Move selection up or down
+ */
+function moveSelection(direction) {
+  const newIndex = currentSelectedIndex + direction;
+  
+  if (newIndex >= 0 && newIndex < filteredTemplates.length) {
+    currentSelectedIndex = newIndex;
+    updateTemplateList();
+    
+    // Scroll selected item into view
+    const selectedItem = keyboardModal.querySelector('.prompter-template-item.selected');
+    if (selectedItem) {
+      selectedItem.scrollIntoView({ block: 'nearest' });
+    }
+  }
+}
+
+/**
+ * Update the template list display
+ */
+function updateTemplateList() {
+  const templateList = keyboardModal.querySelector('.prompter-template-list');
+  if (templateList) {
+    templateList.innerHTML = renderTemplateList();
+    
+    // Re-add click listeners
+    const templateItems = templateList.querySelectorAll('.prompter-template-item');
+    templateItems.forEach((item, index) => {
+      item.addEventListener('click', () => {
+        selectTemplate(index);
+      });
+    });
+  }
+}
+
+/**
+ * Select a template and format the text
+ */
+function selectTemplate(index) {
+  if (index < 0 || index >= filteredTemplates.length) {
+    return;
+  }
+
+  const selectedTemplate = filteredTemplates[index];
+  
+  // Show loading state
+  showLoadingState();
+
+  // Send message to background script to format text
+  chrome.runtime.sendMessage({
+    action: "formatWithTemplate",
+    templateId: selectedTemplate.id,
+    selectedText: modalSelectedText
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      const errorMessage = chrome.runtime.lastError.message || "Unknown runtime error";
+      console.error("Chrome runtime error:", errorMessage);
+      console.error("Full error object:", chrome.runtime.lastError);
+      showNotification(`Communication error: ${errorMessage}`, "error");
+      closeKeyboardModal();
+      return;
+    }
+
+    if (!response) {
+      console.error("No response received from background script");
+      showNotification("No response from extension background", "error");
+      closeKeyboardModal();
+      return;
+    }
+
+    if (response.error) {
+      console.error("Background script error:", response.error);
+      showNotification(response.error, "error");
+      closeKeyboardModal();
+      return;
+    }
+
+    // Replace the selected text with formatted result
+    if (response.formattedText && modalTargetElement) {
+      try {
+        // Focus the target element
+        modalTargetElement.focus();
+        
+        // Replace the text using existing function
+        replaceSelectedTextWithFormatted(response.formattedText);
+        
+        showNotification("Text formatted successfully!", "info");
+      } catch (error) {
+        console.error("Error during text replacement:", error);
+        showNotification("Failed to replace text", "error");
+      }
+    } else {
+      console.warn("No formatted text received or no target element");
+      showNotification("No formatted text received", "error");
+    }
+
+    closeKeyboardModal();
+  });
+}
+
+/**
+ * Replace selected text with formatted text (for keyboard modal)
+ */
+function replaceSelectedTextWithFormatted(newText) {
+  if (!modalTargetElement) {
+    console.error('No target element for text replacement');
+    return;
+  }
+
+  console.log('Replacing text in element:', modalTargetElement.tagName, modalTargetElement.contentEditable);
+  console.log('Selected text to replace:', modalSelectedText);
+  console.log('New formatted text:', newText);
+
+  try {
+    // Focus the element first
+    modalTargetElement.focus();
+
+    // Site-specific handling for better compatibility
+    if (isChatGPT) {
+      replaceTextForChatGPT(modalTargetElement, newText);
+    } else if (isClaude) {
+      replaceTextForClaude(modalTargetElement, newText);
+    } else if (isPerplexity || isT3Chat) {
+      replaceTextForPerplexity(modalTargetElement, newText, false);
+    } else if (isGemini) {
+      replaceTextForGemini(modalTargetElement, newText);
+    } else {
+      // Generic handling for other sites
+      if (modalTargetElement.tagName.toLowerCase() === 'textarea' || 
+          modalTargetElement.tagName.toLowerCase() === 'input') {
+        
+        // For textarea and input elements
+        replaceTextInInputElement(modalTargetElement, newText);
+        
+      } else if (modalTargetElement.contentEditable === 'true') {
+        
+        // For contenteditable elements
+        replaceTextInContentEditable(modalTargetElement, newText);
+        
+      } else {
+        
+        // Fallback for other elements
+        console.warn('Unexpected element type, using fallback');
+        fallbackTextReplacement(modalTargetElement, newText);
+      }
+    }
+
+    // Trigger events to notify the page of changes
+    const events = ['input', 'change', 'keyup', 'paste'];
+    events.forEach(eventType => {
+      modalTargetElement.dispatchEvent(new Event(eventType, { bubbles: true }));
+    });
+
+    // Additional React-compatible events
+    if (isChatGPT || isClaude || isGemini) {
+      // Trigger React synthetic events
+      const inputEvent = new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: newText
+      });
+      modalTargetElement.dispatchEvent(inputEvent);
+      
+      // Trigger composition events for better compatibility
+      modalTargetElement.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+      modalTargetElement.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: newText }));
+    }
+
+    // Special handling for React components
+    if (modalTargetElement._valueTracker) {
+      modalTargetElement._valueTracker.setValue('');
+    }
+    
+    // Force React re-render by triggering additional events
+    setTimeout(() => {
+      modalTargetElement.dispatchEvent(new Event('blur', { bubbles: true }));
+      modalTargetElement.dispatchEvent(new Event('focus', { bubbles: true }));
+    }, 10);
+
+  } catch (error) {
+    console.error('Error replacing text from modal:', error);
+    fallbackTextReplacement(modalTargetElement, newText);
+  }
+}
+
+/**
+ * Replace text in input/textarea elements
+ */
+function replaceTextInInputElement(element, newText) {
+  console.log('Replacing text in input element');
+  
+  // Get current value and find the selected text
+  const currentValue = element.value || '';
+  const selectedTextIndex = currentValue.indexOf(modalSelectedText);
+  
+  if (selectedTextIndex !== -1) {
+    // Replace the specific selected text
+    const beforeText = currentValue.substring(0, selectedTextIndex);
+    const afterText = currentValue.substring(selectedTextIndex + modalSelectedText.length);
+    element.value = beforeText + newText + afterText;
+    
+    // Set cursor position after the new text
+    const newCursorPosition = selectedTextIndex + newText.length;
+    element.setSelectionRange(newCursorPosition, newCursorPosition);
+    
+    console.log('Text replaced in input element');
+  } else {
+    // Fallback: replace all content if we can't find the selected text
+    console.warn('Could not find selected text in input, replacing all content');
+    element.value = newText;
+    element.setSelectionRange(newText.length, newText.length);
+  }
+}
+
+/**
+ * Replace text in contenteditable elements
+ */
+function replaceTextInContentEditable(element, newText) {
+  console.log('Replacing text in contenteditable element');
+  
+  // Try to select the original text first
+  if (selectTextInContentEditable(element, modalSelectedText)) {
+    // If we successfully selected the text, replace it
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      
+      // Insert new text with proper line breaks
+      const lines = newText.split('\n');
+      const fragment = document.createDocumentFragment();
+      
+      lines.forEach((line, index) => {
+        if (line.length > 0) {
+          fragment.appendChild(document.createTextNode(line));
+        }
+        if (index < lines.length - 1) {
+          fragment.appendChild(document.createElement('br'));
+        }
+      });
+      
+      range.insertNode(fragment);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      console.log('Text replaced in contenteditable element');
+    }
+  } else {
+    // Fallback: replace all content
+    console.warn('Could not find selected text in contenteditable, replacing all content');
+    element.innerHTML = '';
+    element.textContent = newText;
+  }
+}
+
+/**
+ * Try to select specific text in a contenteditable element
+ */
+function selectTextInContentEditable(element, textToSelect) {
+  const selection = window.getSelection();
+  const range = document.createRange();
+  
+  // Walk through all text nodes to find the matching text
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null,
+    false
+  );
+
+  let textContent = '';
+  let textNodes = [];
+  let node;
+  
+  while (node = walker.nextNode()) {
+    textNodes.push({
+      node: node,
+      startOffset: textContent.length,
+      endOffset: textContent.length + node.textContent.length
+    });
+    textContent += node.textContent;
+  }
+  
+  const textIndex = textContent.indexOf(textToSelect);
+  if (textIndex === -1) {
+    return false;
+  }
+  
+  // Find which text nodes contain our target text
+  const startIndex = textIndex;
+  const endIndex = textIndex + textToSelect.length;
+  
+  let startNode = null, startOffset = 0;
+  let endNode = null, endOffset = 0;
+  
+  for (const nodeInfo of textNodes) {
+    if (startNode === null && startIndex >= nodeInfo.startOffset && startIndex <= nodeInfo.endOffset) {
+      startNode = nodeInfo.node;
+      startOffset = startIndex - nodeInfo.startOffset;
+    }
+    
+    if (endIndex >= nodeInfo.startOffset && endIndex <= nodeInfo.endOffset) {
+      endNode = nodeInfo.node;
+      endOffset = endIndex - nodeInfo.startOffset;
+      break;
+    }
+  }
+  
+  if (startNode && endNode) {
+    try {
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    } catch (error) {
+      console.error('Error selecting text in contenteditable:', error);
+      return false;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Site-specific text replacement for ChatGPT
+ */
+function replaceTextForChatGPT(element, newText) {
+  console.log('Using ChatGPT-specific text replacement');
+  
+  if (element.contentEditable === 'true') {
+    // ChatGPT uses contenteditable divs
+    try {
+      // Method 1: Try to use execCommand for better React compatibility
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        // Clear current selection and select all text in the element
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        
+        // Use execCommand to replace
+        document.execCommand('insertText', false, newText);
+        
+        console.log('ChatGPT text replaced using execCommand');
+        return;
+      }
+    } catch (error) {
+      console.warn('execCommand failed, trying direct replacement');
+    }
+    
+    // Method 2: Direct content replacement
+    element.innerHTML = '';
+    element.textContent = newText;
+    
+    // Set cursor at end
+    const range = document.createRange();
+    const selection = window.getSelection();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    
+  } else {
+    // Fallback for other element types
+    replaceTextInInputElement(element, newText);
+  }
+}
+
+/**
+ * Site-specific text replacement for Claude.ai
+ */
+function replaceTextForClaude(element, newText) {
+  console.log('Using Claude-specific text replacement');
+  
+  if (element.contentEditable === 'true') {
+    // Claude.ai uses contenteditable with specific structure
+    try {
+      // Clear the element content
+      element.innerHTML = '';
+      
+      // Add the new text, preserving line breaks
+      const lines = newText.split('\n');
+      const fragment = document.createDocumentFragment();
+      
+      lines.forEach((line, index) => {
+        if (line.length > 0) {
+          const div = document.createElement('div');
+          div.textContent = line;
+          fragment.appendChild(div);
+        } else {
+          // Empty line
+          const div = document.createElement('div');
+          div.innerHTML = '<br>';
+          fragment.appendChild(div);
+        }
+      });
+      
+      element.appendChild(fragment);
+      
+      // Set cursor at end
+      const range = document.createRange();
+      const selection = window.getSelection();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      console.log('Claude text replaced successfully');
+    } catch (error) {
+      console.error('Claude-specific replacement failed:', error);
+      replaceTextInContentEditable(element, newText);
+    }
+  } else {
+    replaceTextInInputElement(element, newText);
+  }
+}
+
+/**
+ * Site-specific text replacement for Gemini
+ */
+function replaceTextForGemini(element, newText) {
+  console.log('Using Gemini-specific text replacement');
+  
+  if (element.contentEditable === 'true') {
+    // Gemini uses contenteditable elements
+    try {
+      // Select all content and replace
+      element.focus();
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, newText);
+      
+      console.log('Gemini text replaced using execCommand');
+    } catch (error) {
+      console.warn('Gemini execCommand failed, using fallback');
+      replaceTextInContentEditable(element, newText);
+    }
+  } else {
+    replaceTextInInputElement(element, newText);
+  }
+}
+
+/**
+ * Show loading state in modal
+ */
+function showLoadingState() {
+  if (!keyboardModal) return;
+  
+  const templateList = keyboardModal.querySelector('.prompter-template-list');
+  if (templateList) {
+    templateList.innerHTML = '<div class="prompter-empty">Formatting text...</div>';
+  }
+}
+
+/**
+ * Position the modal on screen
+ */
+function positionModal() {
+  // For now, center the modal. Later we can add smart positioning near selected text
+  if (keyboardModal) {
+    keyboardModal.style.display = 'flex';
+    keyboardModal.style.alignItems = 'center';
+    keyboardModal.style.justifyContent = 'center';
+  }
+}
+
+/**
+ * Close the keyboard modal
+ */
+function closeKeyboardModal() {
+  if (keyboardModal) {
+    keyboardModal.remove();
+    keyboardModal = null;
+  }
+  
+  // Reset state
+  currentSelectedIndex = 0;
+  filteredTemplates = [];
+  allTemplates = [];
+  modalSelectedText = "";
+  modalTargetElement = null;
+}
+
+/**
+ * Escape HTML to prevent XSS
+ */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }

@@ -518,6 +518,123 @@ async function migrateOldHistory(userId) {
   }
 }
 
+// Handle keyboard shortcut commands
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  if (command === "format-prompt") {
+    console.log("Format prompt command triggered");
+    console.log("Current user:", currentUser?.email || "Not logged in");
+    console.log("Available templates:", userTemplates?.length || 0);
+    
+    // Check if user is logged in
+    if (!currentUser) {
+      console.log("User not logged in, cannot show modal");
+      chrome.tabs.sendMessage(tab.id, {
+        action: "showKeyboardModal",
+        error: "Please log in to use Prompter"
+      });
+      return;
+    }
+
+    // Check if user has templates
+    if (!userTemplates || userTemplates.length === 0) {
+      console.log("No templates available for user:", currentUser.email);
+      chrome.tabs.sendMessage(tab.id, {
+        action: "showKeyboardModal",
+        error: "No templates available. Please create templates first."
+      });
+      return;
+    }
+
+    console.log("Sending modal with templates:", userTemplates.map(t => t.name));
+    
+    // Send templates to content script to show modal
+    chrome.tabs.sendMessage(tab.id, {
+      action: "showKeyboardModal",
+      templates: userTemplates,
+      user: currentUser
+    });
+  }
+});
+
+// Handle messages from content script (including keyboard modal selections)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log("Background received message:", message.action);
+  
+  if (message.action === "formatWithTemplate") {
+    const { templateId, selectedText } = message;
+    
+    console.log("Processing format request for template:", templateId);
+    
+    // Validate inputs
+    if (!templateId || !selectedText) {
+      console.error("Missing required parameters:", { templateId, selectedText });
+      sendResponse({ error: "Missing template ID or selected text" });
+      return true;
+    }
+
+    // Check if user is logged in
+    if (!currentUser) {
+      console.error("No current user found");
+      sendResponse({ error: "User not logged in" });
+      return true;
+    }
+
+    // Find the template
+    const template = userTemplates.find(t => t.id === templateId);
+    if (!template) {
+      console.error("Template not found:", templateId);
+      sendResponse({ error: "Template not found" });
+      return true;
+    }
+
+    // Process the formatting asynchronously
+    (async () => {
+      try {
+        console.log("Starting text formatting...");
+        
+        // Format the text using the existing function
+        const formattedText = await formatTextWithTemplate(
+          selectedText,
+          template,
+          currentUser
+        );
+
+        console.log("Text formatted successfully");
+
+        // Track the formatting request
+        await trackFormattingRequest(
+          currentUser.id,
+          templateId,
+          selectedText,
+          formattedText
+        );
+
+        // Save to local history
+        const domain = new URL(sender.tab.url).hostname;
+        await saveToHistory(
+          templateId,
+          template.name,
+          selectedText,
+          formattedText,
+          domain,
+          currentUser.id
+        );
+
+        console.log("Sending formatted response");
+        sendResponse({ formattedText });
+      } catch (error) {
+        console.error("Error formatting text from keyboard modal:", error);
+        const errorMessage = error.message || "Failed to format text";
+        sendResponse({ error: errorMessage });
+      }
+    })();
+
+    return true; // Keep message channel open for async response
+  }
+  
+  return true; // Keep message channel open for other messages
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.url) {
     console.log("Tab updated:", changeInfo.url);
