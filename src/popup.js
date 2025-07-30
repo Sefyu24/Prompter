@@ -220,12 +220,19 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     // Build HTML for templates
-    const templatesHTML = templates.map(template => `
-      <div class="bg-background border border-border rounded-md p-3 mb-[10px] cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-template-id="${template.id}">
-        <div class="font-medium text-foreground mb-1">${template.name}</div>
-        ${template.description ? `<div class="text-xs text-muted-foreground">${template.description}</div>` : ''}
-      </div>
-    `).join('');
+    const templatesHTML = templates.map(template => {
+      const templateType = template.templateType || template.template_type || 'json';
+      const badgeClass = `template-type-badge template-type-${templateType}`;
+      return `
+        <div class="bg-background border border-border rounded-md p-3 mb-[10px] cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-template-id="${template.id}">
+          <div class="flex items-center justify-between mb-1">
+            <div class="font-medium text-foreground">${template.name}</div>
+            <span class="${badgeClass}">${templateType.toUpperCase()}</span>
+          </div>
+          ${template.description ? `<div class="text-xs text-muted-foreground">${template.description}</div>` : ''}
+        </div>
+      `;
+    }).join('');
 
     templatesList.innerHTML = templatesHTML;
   }

@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* Template Type Badges */
+.template-type-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.template-type-json {
+  background: oklch(0.4792 0.2202 231.6067 / 0.1);
+  color: oklch(0.4792 0.2202 231.6067);
+}
+
+.template-type-xml {
+  background: oklch(0.5568 0.2294 142.495 / 0.1);
+  color: oklch(0.5568 0.2294 142.495);
+}
+
+.template-type-markdown {
+  background: oklch(0.5393 0.2713 286.7462 / 0.1);
+  color: oklch(0.5393 0.2713 286.7462);
+}
+
 :root {
   --background: oklch(0.994 0 0);
   --foreground: oklch(0 0 0);

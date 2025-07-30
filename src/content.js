@@ -519,13 +519,20 @@ function renderTemplateList() {
     return '<div class="prompter-empty">No templates found</div>';
   }
 
-  return filteredTemplates.map((template, index) => `
-    <div class="prompter-template-item ${index === currentSelectedIndex ? 'selected' : ''}" data-index="${index}">
-      <div class="prompter-template-name">${escapeHtml(template.name)}</div>
-      ${template.description ? `<div class="prompter-template-description">${escapeHtml(template.description)}</div>` : ''}
-      <div class="prompter-template-number">${index + 1}</div>
-    </div>
-  `).join('');
+  return filteredTemplates.map((template, index) => {
+    const templateType = template.templateType || template.template_type || 'json';
+    const typeClass = `prompter-type-badge prompter-type-${templateType}`;
+    return `
+      <div class="prompter-template-item ${index === currentSelectedIndex ? 'selected' : ''}" data-index="${index}">
+        <div class="prompter-template-header">
+          <div class="prompter-template-name">${escapeHtml(template.name)}</div>
+          <span class="${typeClass}">${templateType.toUpperCase()}</span>
+        </div>
+        ${template.description ? `<div class="prompter-template-description">${escapeHtml(template.description)}</div>` : ''}
+        <div class="prompter-template-number">${index + 1}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 /**
@@ -651,10 +658,17 @@ function addModalStyles() {
       box-shadow: 0px 2px 3px 0px hsl(0 0% 0% / 0.16), 0px 1px 2px -1px hsl(0 0% 0% / 0.16);
     }
 
+    .prompter-template-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2px;
+      width: 100%;
+    }
+
     .prompter-template-name {
       font-weight: 500;
       color: oklch(0 0 0);
-      margin-bottom: 2px;
       flex: 1;
     }
 
@@ -662,6 +676,31 @@ function addModalStyles() {
       font-size: 13px;
       color: oklch(0.4386 0 0);
       flex: 1;
+      margin-top: 2px;
+    }
+
+    .prompter-type-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .prompter-type-json {
+      background: oklch(0.4792 0.2202 231.6067 / 0.1);
+      color: oklch(0.4792 0.2202 231.6067);
+    }
+
+    .prompter-type-xml {
+      background: oklch(0.5568 0.2294 142.495 / 0.1);
+      color: oklch(0.5568 0.2294 142.495);
+    }
+
+    .prompter-type-markdown {
+      background: oklch(0.5393 0.2713 286.7462 / 0.1);
+      color: oklch(0.5393 0.2713 286.7462);
     }
 
     .prompter-template-number {

@@ -1,5 +1,4 @@
 import { supabase } from "./supabase.js";
-import { config } from "./config.js";
 import stringify from "json-stringify-pretty-compact";
 
 // Context menu setup
@@ -45,7 +44,7 @@ chrome.runtime.onStartup.addListener(async () => {
 async function ensureValidSession() {
   try {
     const { session } = await chrome.storage.local.get(["session"]);
-    
+
     if (!session) {
       console.log("No session found in storage");
       return;
@@ -77,7 +76,6 @@ async function ensureValidSession() {
       currentUser = data.user;
       console.log("Current user updated:", data.user.email);
     }
-
   } catch (error) {
     console.error("Error ensuring valid session:", error);
     throw error;
@@ -103,10 +101,13 @@ async function loadUserData() {
 
     console.log("Session found, restoring user session");
     // Set the session in Supabase
-    await supabase.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
-    });
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
+
+    if (sessionError) throw sessionError;
 
     // Get current user
     const {
@@ -118,16 +119,61 @@ async function loadUserData() {
     currentUser = user;
     console.log("Current user:", user.email);
 
-    // Load user's templates
-    const { data: templates, error: templatesError } = await supabase
-      .from("templates")
-      .select("*")
-      .eq("created_by", user.id)
-      .order("created_at", { ascending: false });
+    // Use the current session token (may be refreshed)
+    const currentSession = sessionData.session || session;
 
-    if (templatesError) throw templatesError;
+    // Update storage if session was refreshed
+    if (
+      sessionData.session &&
+      sessionData.session.access_token !== session.access_token
+    ) {
+      console.log(
+        "Session was refreshed during loadUserData, updating storage"
+      );
+      await chrome.storage.local.set({ session: sessionData.session });
+    }
 
-    userTemplates = templates || [];
+    // Load user's templates using API route
+    try {
+      console.log("Making API call to fetch templates");
+      console.log(
+        "Token first 20 chars:",
+        currentSession.access_token?.substring(0, 20) + "..."
+      );
+      console.log("Token length:", currentSession.access_token?.length);
+
+      const response = await fetch(
+        "http://localhost:3000/api/extension/templates",
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${currentSession.access_token}`,
+          },
+        }
+      );
+
+      console.log("API response status:", response.status);
+      console.log(
+        "API response headers:",
+        Object.fromEntries(response.headers.entries())
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("API error response:", errorText);
+        throw new Error(
+          `Failed to fetch templates: ${response.status} - ${errorText}`
+        );
+      }
+
+      const templates = await response.json();
+      console.log("Successfully fetched templates:", templates?.length || 0);
+      userTemplates = templates || [];
+    } catch (error) {
+      console.error("Error fetching templates from API:", error);
+      userTemplates = [];
+    }
     console.log("Loaded templates:", userTemplates.length, "templates");
 
     // Migrate old history format if needed
@@ -241,7 +287,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     try {
       // Ensure valid session first
       await ensureValidSession();
-      
+
       if (!currentUser) {
         console.error("No user authenticated");
         chrome.tabs.sendMessage(tab.id, {
@@ -270,20 +316,40 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       console.log("After reload, userTemplates count:", userTemplates.length);
     }
 
-    // If still not found, fetch directly from database
+    // If still not found, fetch from API
     if (!template) {
-      console.log("Template still not found, fetching from database...");
+      console.log("Template still not found, fetching from API...");
       try {
-        const { data, error } = await supabase
-          .from("templates")
-          .select("*")
-          .eq("id", templateId)
-          .single();
+        // Ensure valid session before making API call
+        await ensureValidSession();
+        const { session } = await chrome.storage.local.get(["session"]);
 
-        if (error) throw error;
-        template = data;
+        if (!session) {
+          throw new Error("No valid session available");
+        }
+
+        const response = await fetch(
+          "http://localhost:3000/api/extension/templates",
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch templates: ${response.status}`);
+        }
+
+        const templates = await response.json();
+        template = templates.find((t) => t.id === templateId);
+
+        // Update userTemplates cache
+        userTemplates = templates;
       } catch (error) {
-        console.error("Failed to fetch template from database:", error);
+        console.error("Failed to fetch template from API:", error);
         chrome.tabs.sendMessage(tab.id, {
           action: "showError",
           message: "Template not found. Please refresh and try again.",
@@ -358,8 +424,8 @@ async function formatTextWithTemplate(text, template, user) {
   try {
     // Ensure we have valid session and user state
     await ensureValidSession();
-    
-    // Get the current session to extract JWT token
+
+    // Get the current session to extract JWT token (may be refreshed by ensureValidSession)
     const { session } = await chrome.storage.local.get(["session"]);
 
     if (!session || !session.access_token) {
@@ -400,30 +466,49 @@ async function formatTextWithTemplate(text, template, user) {
     const data = await response.json();
     let formattedText = data.formattedText;
 
-    // Keep your existing JSON formatting logic
+    // Apply type-specific formatting based on template type
     try {
-      if (
-        (formattedText.startsWith("{") && formattedText.endsWith("}")) ||
-        (formattedText.startsWith("[") && formattedText.endsWith("]"))
-      ) {
-        const jsonObject = JSON.parse(formattedText);
-        formattedText = stringify(jsonObject, {
-          maxLength: 80,
-          indent: 2,
-        });
-        console.log("JSON formatted successfully");
+      const templateType =
+        template.templateType || template.template_type || "json";
+      if (templateType === "json") {
+        // Format JSON templates with pretty printing
+        if (
+          (formattedText.startsWith("{") && formattedText.endsWith("}")) ||
+          (formattedText.startsWith("[") && formattedText.endsWith("]"))
+        ) {
+          const jsonObject = JSON.parse(formattedText);
+          formattedText = stringify(jsonObject, {
+            maxLength: 80,
+            indent: 2,
+          });
+          console.log("JSON formatted successfully");
+        }
+      } else if (templateType === "xml") {
+        // Basic XML formatting - add proper indentation if needed
+        if (formattedText.includes("<") && formattedText.includes(">")) {
+          // Simple XML formatting - just ensure it's readable
+          formattedText = formattedText
+            .replace(/></g, ">\n<")
+            .replace(/^\s+|\s+$/g, "");
+          console.log("XML formatted successfully");
+        }
+      } else if (templateType === "markdown") {
+        // Markdown doesn't need special formatting, keep as-is
+        console.log("Markdown template - no additional formatting needed");
       }
-    } catch (jsonError) {
-      console.log("Response is not valid JSON, returning as-is");
+    } catch (formatError) {
+      console.log(
+        "Format-specific processing failed, returning as-is:",
+        formatError
+      );
     }
 
     return formattedText;
   } catch (error) {
     console.error("Error calling backend API:", error);
     // Fallback to simple template replacement
-    return template.prompt_template
-      ? template.prompt_template.replace("{text}", text)
-      : text;
+    const promptTemplate = template.promptTemplate || template.prompt_template;
+    return promptTemplate ? promptTemplate.replace("{text}", text) : text;
   }
 }
 
@@ -468,7 +553,14 @@ async function trackFormattingRequest(
  * @param {string} userId - The user's ID
  * @returns {Promise<void>}
  */
-async function saveToHistory(templateId, templateName, inputText, outputText, domain, userId) {
+async function saveToHistory(
+  templateId,
+  templateName,
+  inputText,
+  outputText,
+  domain,
+  userId
+) {
   try {
     if (!userId) {
       console.warn("Cannot save history: No user ID provided");
@@ -484,26 +576,31 @@ async function saveToHistory(templateId, templateName, inputText, outputText, do
       templateId: templateId,
       timestamp: timestamp,
       domain: domain,
-      userId: userId
+      userId: userId,
     };
 
     // Use user-specific storage key
     const historyKey = `formatting_history_${userId}`;
-    
+
     // Get existing history for this user
     const result = await chrome.storage.local.get([historyKey]);
     const existingHistory = result[historyKey] || [];
-    
+
     // Add new item to the beginning
     const updatedHistory = [historyItem, ...existingHistory];
-    
+
     // Limit to 50 items
     const limitedHistory = updatedHistory.slice(0, 50);
-    
+
     // Save back to storage with user-specific key
     await chrome.storage.local.set({ [historyKey]: limitedHistory });
-    
-    console.log("Saved to user history:", historyItem.templateName, "for user:", userId);
+
+    console.log(
+      "Saved to user history:",
+      historyItem.templateName,
+      "for user:",
+      userId
+    );
   } catch (error) {
     console.error("Error saving to history:", error);
   }
@@ -564,35 +661,44 @@ async function migrateOldHistory(userId) {
     if (!userId) return;
 
     // Check if old history exists
-    const { formatting_history: oldHistory } = await chrome.storage.local.get(['formatting_history']);
+    const { formatting_history: oldHistory } = await chrome.storage.local.get([
+      "formatting_history",
+    ]);
     if (!oldHistory || oldHistory.length === 0) return;
 
-    console.log("Migrating old history to user-specific format for user:", userId);
+    console.log(
+      "Migrating old history to user-specific format for user:",
+      userId
+    );
 
     // Check if user already has history (don't overwrite)
     const userHistoryKey = `formatting_history_${userId}`;
-    const { [userHistoryKey]: existingUserHistory } = await chrome.storage.local.get([userHistoryKey]);
-    
+    const { [userHistoryKey]: existingUserHistory } =
+      await chrome.storage.local.get([userHistoryKey]);
+
     if (existingUserHistory && existingUserHistory.length > 0) {
       console.log("User already has history, skipping migration");
       // Remove old history since it's no longer needed
-      await chrome.storage.local.remove(['formatting_history']);
+      await chrome.storage.local.remove(["formatting_history"]);
       return;
     }
 
     // Migrate old history to user-specific key
-    const migratedHistory = oldHistory.map(item => ({
+    const migratedHistory = oldHistory.map((item) => ({
       ...item,
-      userId: userId // Add userId to existing items
+      userId: userId, // Add userId to existing items
     }));
 
     // Save to user-specific key
     await chrome.storage.local.set({ [userHistoryKey]: migratedHistory });
-    
+
     // Remove old history
-    await chrome.storage.local.remove(['formatting_history']);
-    
-    console.log(`Migrated ${migratedHistory.length} history items for user:`, userId);
+    await chrome.storage.local.remove(["formatting_history"]);
+
+    console.log(
+      `Migrated ${migratedHistory.length} history items for user:`,
+      userId
+    );
   } catch (error) {
     console.error("Error migrating old history:", error);
   }
@@ -604,46 +710,68 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     console.log("Format prompt command triggered");
     console.log("Current user:", currentUser?.email || "Not logged in");
     console.log("Available templates:", userTemplates?.length || 0);
-    
+
     try {
       // Ensure valid session first
       await ensureValidSession();
-      
+
       // Check if user is logged in after ensuring session
       if (!currentUser) {
         console.log("User not logged in, cannot show modal");
         chrome.tabs.sendMessage(tab.id, {
           action: "showKeyboardModal",
-          error: "You need to be authenticated first"
+          error: "You need to be authenticated first",
         });
         return;
+      }
+
+      // Debug: Log the state before checking templates
+      console.log(
+        "Before template check - userTemplates:",
+        userTemplates?.length || 0
+      );
+      console.log(
+        "userTemplates array:",
+        userTemplates?.map((t) => t.name) || "empty"
+      );
+
+      // If templates appear to not be loaded, this might be a race condition
+      if (!userTemplates || userTemplates.length === 0) {
+        console.log(
+          "Templates appear empty - this shouldn't happen if extension loaded correctly"
+        );
+        console.log("Skipping template reload to avoid 401 error");
+        // Don't call loadUserData() here as it causes 401 error
       }
     } catch (error) {
       console.error("Authentication check failed:", error);
       chrome.tabs.sendMessage(tab.id, {
         action: "showKeyboardModal",
-        error: "You need to be authenticated first"
+        error: "You need to be authenticated first",
       });
       return;
     }
 
-    // Check if user has templates
+    // Check if user has templates after loading
     if (!userTemplates || userTemplates.length === 0) {
       console.log("No templates available for user:", currentUser.email);
       chrome.tabs.sendMessage(tab.id, {
         action: "showKeyboardModal",
-        error: "No templates available. Please create templates first."
+        error: "No templates available. Please create templates first.",
       });
       return;
     }
 
-    console.log("Sending modal with templates:", userTemplates.map(t => t.name));
-    
+    console.log(
+      "Sending modal with templates:",
+      userTemplates.map((t) => t.name)
+    );
+
     // Send templates to content script to show modal
     chrome.tabs.sendMessage(tab.id, {
       action: "showKeyboardModal",
       templates: userTemplates,
-      user: currentUser
+      user: currentUser,
     });
   }
 });
@@ -651,15 +779,18 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 // Handle messages from content script (including keyboard modal selections)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("Background received message:", message.action);
-  
+
   if (message.action === "formatWithTemplate") {
     const { templateId, selectedText } = message;
-    
+
     console.log("Processing format request for template:", templateId);
-    
+
     // Validate inputs
     if (!templateId || !selectedText) {
-      console.error("Missing required parameters:", { templateId, selectedText });
+      console.error("Missing required parameters:", {
+        templateId,
+        selectedText,
+      });
       sendResponse({ error: "Missing template ID or selected text" });
       return true;
     }
@@ -669,7 +800,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         // Ensure valid session first
         await ensureValidSession();
-        
+
         // Check if user is logged in after ensuring session
         if (!currentUser) {
           console.error("No current user found after session check");
@@ -678,7 +809,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         // Find the template
-        const template = userTemplates.find(t => t.id === templateId);
+        const template = userTemplates.find((t) => t.id === templateId);
         if (!template) {
           console.error("Template not found:", templateId);
           sendResponse({ error: "Template not found" });
@@ -686,7 +817,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         console.log("Starting text formatting...");
-        
+
         // Format the text using the existing function
         const formattedText = await formatTextWithTemplate(
           selectedText,
@@ -726,7 +857,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     return true; // Keep message channel open for async response
   }
-  
+
   return true; // Keep message channel open for other messages
 });
 
