@@ -1,6 +1,8 @@
 *.mcp.json
 *.claude
 *claude*
+/cursor
+
 
 ### macOS ###
 # General
