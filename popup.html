@@ -23,23 +23,61 @@
       <!-- User Dashboard -->
       <div id="user-dashboard" class="p-5 hidden">
       <!-- User Header -->
-      <div class="flex items-center gap-[15px] mb-5 pb-5 border-b border-border">
-        <img id="user-avatar" src="" alt="Avatar" class="w-[50px] h-[50px] rounded-full object-cover">
-        <div>
-          <h2 id="user-name" class="m-0 text-lg text-foreground font-semibold">Loading...</h2>
-          <p id="user-email" class="mt-1 mb-0 text-sm text-muted-foreground">Loading...</p>
+      <div class="flex items-center justify-between mb-5 pb-5 border-b border-border">
+        <div class="flex items-center gap-3">
+          <img id="user-avatar" src="" alt="Avatar" class="w-[35px] h-[35px] rounded-full object-cover">
+          <div>
+            <h2 id="user-name" class="m-0 text-lg text-foreground font-semibold">Loading...</h2>
+          </div>
+        </div>
+        
+        <!-- Usage Progress in Header -->
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <!-- Smaller Circular Progress SVG -->
+            <svg width="50" height="50" class="transform -rotate-90">
+              <!-- Background circle -->
+              <circle cx="25" cy="25" r="18" stroke="#e2e8f0" stroke-width="3" fill="none" opacity="0.4" />
+              <!-- Progress circle -->
+              <circle id="progress-circle" cx="25" cy="25" r="18" stroke="#8b5cf6" stroke-width="4" fill="none" 
+                      stroke-dasharray="113.1" stroke-dashoffset="113.1" 
+                      class="transition-all duration-700 ease-out" stroke-linecap="round" 
+                      style="filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.4));" />
+            </svg>
+            <!-- Usage text inside circle -->
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <div id="usage-count" class="text-xs font-bold text-foreground leading-none">0</div>
+              <div id="usage-max" class="text-[10px] text-muted-foreground font-medium">/20</div>
+            </div>
+          </div>
+          <div class="text-xs text-muted-foreground font-medium">30d</div>
         </div>
       </div>
 
-      <!-- Stats Cards -->
-      <div class="grid grid-cols-2 gap-[15px] mb-[25px]">
-        <div class="bg-muted border border-border rounded-lg p-5 text-center">
-          <div id="total-requests" class="text-[28px] font-semibold text-foreground mb-[5px]">0</div>
-          <div class="text-sm text-muted-foreground">Last 30 Days</div>
+      <!-- Membership Card -->
+      <div id="membership-card" class="bg-muted border border-border rounded-lg p-4 mb-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2">
+              <div id="membership-status" class="text-lg font-semibold text-foreground">Loading...</div>
+              <div class="text-xs text-muted-foreground">Plan</div>
+            </div>
+          </div>
+          <div id="pro-actions" class="hidden">
+            <button id="manage-templates-btn" class="inline-flex items-center gap-2 px-3 py-2 bg-background border border-border rounded-md text-xs font-medium text-foreground cursor-pointer transition-all duration-200 hover:bg-muted hover:border-ring">
+              <i data-lucide="settings" class="w-3 h-3"></i>
+              Manage Templates
+            </button>
+          </div>
         </div>
-        <div class="bg-muted border border-border rounded-lg p-5 text-center">
-          <div id="total-templates" class="text-[28px] font-semibold text-foreground mb-[5px]">0</div>
-          <div class="text-sm text-muted-foreground">Templates</div>
+        
+        <!-- Upgrade section for free users -->
+        <div id="upgrade-section" class="mt-3 hidden">
+          <p class="text-xs text-muted-foreground mb-3">Access more templates that helped users reach their goal!</p>
+          <button id="upgrade-btn" class="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-purple-700 text-white text-sm font-semibold rounded-lg cursor-pointer transition-all duration-300 hover:from-purple-700 hover:to-purple-800 hover:shadow-lg hover:scale-105 active:scale-95 group w-full">
+            <i data-lucide="zap" class="w-4 h-4 group-hover:animate-pulse"></i>
+            Upgrade to Pro
+          </button>
         </div>
       </div>
 

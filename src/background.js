@@ -1,6 +1,7 @@
 import { supabase } from "./supabase.js";
 import stringify from "json-stringify-pretty-compact";
 import { API_CONFIG } from "./config.js";
+import { getStoredAccessToken, checkAuthStatus, debugStorageContents } from "./chromeStorageAdapter.js";
 
 // Context menu setup
 let userTemplates = [];
@@ -45,6 +46,9 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     console.log("👋 Background: User signed out, clearing data");
     currentUser = null;
     userTemplates = [];
+    
+    // Debug: Check what's actually in storage after sign out
+    await debugStorageContents();
     await updateContextMenu();
   } else if (event === "TOKEN_REFRESHED" && session) {
     console.log(
@@ -69,49 +73,6 @@ chrome.runtime.onStartup.addListener(async () => {
   }, 500);
 });
 
-/**
- * Ensures we have a valid session using Supabase's automatic session management
- * @async
- * @returns {Promise<void>}
- */
-async function ensureValidSession() {
-  try {
-    console.log("Checking session validity...");
-
-    // Get current session - Supabase automatically handles storage and refresh
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.getSession();
-
-    if (error) {
-      console.log("Session validation failed:", error);
-      currentUser = null;
-      userTemplates = [];
-      throw new Error("You need to be authenticated first");
-    }
-
-    if (!session) {
-      console.log("No valid session found");
-      currentUser = null;
-      userTemplates = [];
-      throw new Error("You need to be authenticated first");
-    }
-
-    // Update current user if we have a valid session
-    if (session.user) {
-      currentUser = session.user;
-      console.log("Session valid for user:", session.user.email);
-    }
-
-    return session;
-  } catch (error) {
-    console.error("Error ensuring valid session:", error);
-    currentUser = null;
-    userTemplates = [];
-    throw error;
-  }
-}
 
 /**
  * Loads the current user's data and templates using Supabase automatic session management
@@ -121,73 +82,32 @@ async function ensureValidSession() {
 async function loadUserData() {
   try {
     console.log("🔄 Background: Loading user data...");
+    
+    // Debug: First check what's in storage
+    const hasAuth = await checkAuthStatus();
+    console.log("🔍 Background: Auth status check result:", hasAuth);
 
-    // Get session using Supabase's automatic session management
-    console.log(
-      "📋 Background: Attempting to retrieve session from Supabase..."
-    );
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
-
-    console.log("📋 Background: Session retrieval result:", {
-      hasSession: !!session,
-      hasError: !!sessionError,
-      sessionUser: session?.user?.email || "no user",
-      tokenPresent: !!session?.access_token,
-    });
-
-    if (sessionError) {
-      console.error("❌ Background: Session error:", sessionError);
-      throw sessionError;
-    }
-
-    if (!session) {
-      console.log(
-        "⚠️ Background: No session found, creating context menu without templates"
-      );
+    // Get stored access token directly
+    let accessToken;
+    try {
+      accessToken = await getStoredAccessToken();
+      console.log("✅ Background: Access token retrieved successfully");
+    } catch (tokenError) {
+      console.log("⚠️ Background: No access token found:", tokenError.message);
+      // Debug: Show storage contents when token retrieval fails
+      await debugStorageContents();
       currentUser = null;
       userTemplates = [];
       await createContextMenuWithTemplates();
       return;
     }
 
-    console.log("✅ Background: Valid session found, loading user data");
-    console.log("🔑 Background: Token info:", {
-      tokenLength: session.access_token?.length || 0,
-      tokenStart: session.access_token?.substring(0, 20) + "...",
-      expiresAt: session.expires_at,
-      refreshToken: !!session.refresh_token,
-    });
-
-    // Get current user - session is already valid
-    console.log("👤 Background: Attempting to get user info...");
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError) {
-      console.error("❌ Background: User error:", userError);
-      throw userError;
-    }
-
-    currentUser = user;
-    console.log(
-      "✅ Background: Current user loaded:",
-      user?.email || "no email"
-    );
-
-    // Load user's templates using API route
+    // Load user's templates using API route (API will validate token and return user info)
     try {
       console.log("📄 Background: Making API call to fetch templates");
-      console.log("🔑 Background: Using token for API:", {
-        tokenStart: session.access_token?.substring(0, 20) + "...",
-        tokenLength: session.access_token?.length,
-      });
 
       const url = API_CONFIG.getUrl('TEMPLATES');
-      const headers = API_CONFIG.getHeaders(session.access_token);
+      const headers = API_CONFIG.getHeaders(accessToken);
       
       console.log("📡 Background: Making API request:", {
         url,
@@ -203,14 +123,16 @@ async function loadUserData() {
       console.log("📡 Background: API response headers:", Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          console.log("❌ Background: Token invalid, clearing user data");
+          currentUser = null;
+          userTemplates = [];
+          await createContextMenuWithTemplates();
+          return;
+        }
+        
         const errorText = await response.text();
         console.error("❌ Background: API error response:", errorText);
-        console.error("❌ Background: Full response details:", {
-          status: response.status,
-          statusText: response.statusText,
-          url: response.url,
-          headers: Object.fromEntries(response.headers.entries())
-        });
         throw new Error(
           `Failed to fetch templates: ${response.status} - ${errorText}`
         );
@@ -244,15 +166,44 @@ async function loadUserData() {
       }
       userTemplates = templates || [];
       console.log("📊 Background: userTemplates after assignment:", userTemplates);
+
+      // Since API call succeeded, get user info
+      try {
+        console.log("👤 Background: Getting user info after successful API call...");
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        
+        if (userError) {
+          console.warn("❌ Background: Could not get user info:", userError);
+          currentUser = null;
+        } else {
+          currentUser = user;
+          console.log("✅ Background: Current user loaded:", user?.email || "no email");
+          // Migrate old history format if needed
+          await migrateOldHistory(user.id);
+        }
+      } catch (userInfoError) {
+        console.warn("❌ Background: Error getting user info:", userInfoError);
+        currentUser = null;
+      }
+      
     } catch (error) {
       console.error("❌ Background: Error fetching templates from API:", error);
+      
+      if (error.message.includes('No authentication session found')) {
+        // Token was invalid, clear everything
+        currentUser = null;
+        userTemplates = [];
+        await createContextMenuWithTemplates();
+        return;
+      }
+      
       userTemplates = [];
     }
 
     console.log("📊 Background: Final template count:", userTemplates.length);
-
-    // Migrate old history format if needed
-    await migrateOldHistory(user.id);
 
     // Update context menu after loading templates
     await updateContextMenu();
@@ -359,20 +310,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     console.log("Current userTemplates count:", userTemplates.length);
     console.log("Current user:", currentUser?.email || "Not logged in");
 
+    // Check if we have a stored access token (no need to validate, API will do that)
     try {
-      // Ensure valid session first
-      await ensureValidSession();
-
-      if (!currentUser) {
-        console.error("No user authenticated");
-        chrome.tabs.sendMessage(tab.id, {
-          action: "showError",
-          message: "You need to be authenticated first",
-        });
-        return;
-      }
+      await getStoredAccessToken();
     } catch (error) {
-      console.error("Authentication check failed:", error);
+      console.error("No access token found:", error);
       chrome.tabs.sendMessage(tab.id, {
         action: "showError",
         message: "You need to be authenticated first",
@@ -395,16 +337,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (!template) {
       console.log("Template still not found, fetching from API...");
       try {
-        // Ensure valid session before making API call
-        const session = await ensureValidSession();
-
-        if (!session) {
-          throw new Error("No valid session available");
-        }
+        // Get stored access token directly
+        const accessToken = await getStoredAccessToken();
 
         const response = await fetch(API_CONFIG.getUrl('TEMPLATES'), {
           method: "GET",
-          headers: API_CONFIG.getHeaders(session.access_token),
+          headers: API_CONFIG.getHeaders(accessToken),
         });
 
         if (!response.ok) {
@@ -490,26 +428,13 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
  */
 async function formatTextWithTemplate(text, template, user) {
   try {
-    // Ensure we have valid session and user state
-    const session = await ensureValidSession();
-
-    if (!session || !session.access_token) {
-      throw new Error("You need to be authenticated first");
-    }
-
-    // Double-check user is still logged in
-    if (!currentUser) {
-      console.log("Current user lost, reloading user data...");
-      await loadUserData();
-      if (!currentUser) {
-        throw new Error("You need to be authenticated first");
-      }
-    }
+    // Get stored access token directly (no session validation needed)
+    const accessToken = await getStoredAccessToken();
 
     // Call your backend API instead of OpenAI directly
     const response = await fetch(API_CONFIG.getUrl('FORMAT'), {
       method: "POST",
-      headers: API_CONFIG.getHeaders(session.access_token),
+      headers: API_CONFIG.getHeaders(accessToken),
       body: JSON.stringify({
         templateId: template.id,
         userText: text,
@@ -774,44 +699,34 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     console.log("Available templates:", userTemplates?.length || 0);
 
     try {
-      // Ensure valid session first
-      await ensureValidSession();
-
-      // Check if user is logged in after ensuring session
-      if (!currentUser) {
-        console.log("User not logged in, cannot show modal");
-        chrome.tabs.sendMessage(tab.id, {
-          action: "showKeyboardModal",
-          error: "You need to be authenticated first",
-        });
-        return;
-      }
-
-      // Debug: Log the state before checking templates
-      console.log(
-        "Before template check - userTemplates:",
-        userTemplates?.length || 0
-      );
-      console.log(
-        "userTemplates array:",
-        userTemplates?.map((t) => t.name) || "empty"
-      );
-
-      // If templates appear to not be loaded, this might be a race condition
-      if (!userTemplates || userTemplates.length === 0) {
-        console.log(
-          "Templates appear empty - this shouldn't happen if extension loaded correctly"
-        );
-        console.log("Skipping template reload to avoid 401 error");
-        // Don't call loadUserData() here as it causes 401 error
-      }
+      // Check if we have a stored access token
+      await getStoredAccessToken();
     } catch (error) {
-      console.error("Authentication check failed:", error);
+      console.log("No access token found, cannot show modal");
       chrome.tabs.sendMessage(tab.id, {
         action: "showKeyboardModal",
         error: "You need to be authenticated first",
       });
       return;
+    }
+
+    // Debug: Log the state before checking templates
+    console.log(
+      "Before template check - userTemplates:",
+      userTemplates?.length || 0
+    );
+    console.log(
+      "userTemplates array:",
+      userTemplates?.map((t) => t.name) || "empty"
+    );
+
+    // If templates appear to not be loaded, this might be a race condition
+    if (!userTemplates || userTemplates.length === 0) {
+      console.log(
+        "Templates appear empty - this shouldn't happen if extension loaded correctly"
+      );
+      console.log("Skipping template reload to avoid 401 error");
+      // Don't call loadUserData() here as it causes 401 error
     }
 
     // Check if user has templates after loading
@@ -931,61 +846,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Process the formatting asynchronously
     (async () => {
       try {
-        // Ensure valid session first
-        await ensureValidSession();
-
-        // Check if user is logged in after ensuring session
-        if (!currentUser) {
-          console.error("No current user found after session check");
-          try {
-            sendResponse({ error: "You need to be authenticated first" });
-          } catch (e) {
-            console.log("Response channel already closed");
-          }
-          return;
-        }
-
-        // Find the template
-        const template = userTemplates.find((t) => t.id === templateId);
-        if (!template) {
-          console.error("Template not found:", templateId);
-          try {
-            sendResponse({ error: "Template not found" });
-          } catch (e) {
-            console.log("Response channel already closed");
-          }
-          return;
-        }
+        // Get stored access token directly (let API validate authentication)
+        const accessToken = await getStoredAccessToken();
 
         console.log("Starting text formatting...");
 
-        // Format the text using the existing function
+        // Create a minimal template object for API call
+        const template = { id: templateId };
+
+        // Format the text using the existing function (API will validate template exists)
         const formattedText = await formatTextWithTemplate(
           selectedText,
           template,
-          currentUser
+          null // user parameter not needed anymore
         );
 
         console.log("Text formatted successfully");
 
-        // Track the formatting request
-        await trackFormattingRequest(
-          currentUser.id,
-          templateId,
-          selectedText,
-          formattedText
-        );
+        // Try to save to history (gracefully fail if user info not available)
+        try {
+          const domain = new URL(sender.tab.url).hostname;
+          if (currentUser?.id) {
+            await trackFormattingRequest(
+              currentUser.id,
+              templateId,
+              selectedText,
+              formattedText
+            );
 
-        // Save to local history
-        const domain = new URL(sender.tab.url).hostname;
-        await saveToHistory(
-          templateId,
-          template.name,
-          selectedText,
-          formattedText,
-          domain,
-          currentUser.id
-        );
+            // Find template name for history (fallback to ID if not found)
+            const templateName = userTemplates.find(t => t.id === templateId)?.name || templateId;
+            
+            await saveToHistory(
+              templateId,
+              templateName,
+              selectedText,
+              formattedText,
+              domain,
+              currentUser.id
+            );
+          }
+        } catch (historyError) {
+          console.warn("Could not save to history:", historyError);
+          // Continue execution - history saving is not critical
+        }
 
         console.log("Sending formatted response");
         try {
@@ -1062,24 +966,43 @@ async function finishUserOAuth(url) {
     });
 
     if (!access_token || !refresh_token) {
-      throw new Error(`no supabase tokens found in URL hash`);
+      throw new Error(`no OAuth tokens found in URL hash`);
     }
 
-    // Set session in Supabase - storage adapter will automatically persist it
-    console.log("🔐 Setting session in Supabase...");
-    const { data, error } = await supabase.auth.setSession({
+    // Simply store the Supabase tokens directly - no need for custom endpoint
+    console.log("🔐 Storing Supabase session directly...");
+    
+    // We need to get user info from the token
+    // The token is a JWT, we can decode it to get basic info
+    const tokenPayload = JSON.parse(atob(access_token.split('.')[1]));
+    
+    // Store session data directly in Chrome storage using the same format as Supabase adapter
+    const storageKey = 'sb-audlasqcnqqtfednxmdo-auth-token';
+    const sessionToStore = {
       access_token,
       refresh_token,
-    });
-    if (error) {
-      console.error("❌ Error setting session:", error);
-      throw error;
-    }
+      user: {
+        id: tokenPayload.sub,
+        email: tokenPayload.email,
+        user_metadata: tokenPayload.user_metadata || {}
+      },
+      expires_at: tokenPayload.exp * 1000 // Convert to milliseconds
+    };
 
-    console.log("✅ Session set successfully!");
-    console.log("👤 User authenticated:", data.user?.email);
-    console.log("💾 Session data present:", !!data.session);
-    console.log("✅ Session automatically stored via Chrome storage adapter");
+    await chrome.storage.local.set({
+      [storageKey]: JSON.stringify(sessionToStore)
+    });
+
+    console.log("💾 Supabase session stored in Chrome storage successfully");
+    console.log("👤 User authenticated:", tokenPayload.email);
+    
+    // Verify session is actually stored
+    try {
+      const testToken = await getStoredAccessToken();
+      console.log("✅ Session verified - token accessible:", !!testToken);
+    } catch (e) {
+      console.warn("⚠️ Session verification failed:", e.message);
+    }
 
     // Trigger a manual load to ensure data is available
     console.log("🔄 Manually triggering loadUserData after OAuth...");
@@ -1098,7 +1021,7 @@ async function finishUserOAuth(url) {
 
     console.log(`finished handling user OAuth callback`);
   } catch (error) {
-    console.error("here is the error related to Create Client", error);
+    console.error("OAuth callback error:", error);
   }
 }
 
