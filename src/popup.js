@@ -1,4 +1,5 @@
 import { supabase } from "./supabase.js";
+import { API_CONFIG } from "./config.js";
 
 document.addEventListener("DOMContentLoaded", async function () {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -199,12 +200,9 @@ document.addEventListener("DOMContentLoaded", async function () {
           throw new Error("No active session");
         }
 
-        const response = await fetch("http://localhost:3000/api/extension/stats", {
+        const response = await fetch(API_CONFIG.getUrl('STATS'), {
           method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
+          headers: API_CONFIG.getHeaders(session.access_token),
         });
 
         if (!response.ok) {

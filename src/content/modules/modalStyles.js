@@ -352,11 +352,11 @@ export class ModalStyleManager {
       .prompter-loading::after {
         content: '';
         display: inline-block;
-        width: 12px;
-        height: 12px;
+        width: 20px;
+        height: 20px;
         margin-left: 8px;
-        border: 2px solid oklch(0.7 0 0);
-        border-top: 2px solid ${COLORS.INFO};
+        border: 3px solid oklch(0.7 0 0);
+        border-top: 3px solid ${COLORS.INFO};
         border-radius: 50%;
         animation: prompter-loading-spin 1s linear infinite;
       }

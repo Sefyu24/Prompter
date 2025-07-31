@@ -1,5 +1,6 @@
 import { supabase } from "./supabase.js";
 import stringify from "json-stringify-pretty-compact";
+import { API_CONFIG } from "./config.js";
 
 // Context menu setup
 let userTemplates = [];
@@ -185,25 +186,44 @@ async function loadUserData() {
         tokenLength: session.access_token?.length,
       });
 
-      const response = await fetch(
-        "http://localhost:3000/api/extension/templates",
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
+      const url = API_CONFIG.getUrl('TEMPLATES');
+      const headers = API_CONFIG.getHeaders(session.access_token);
+      
+      console.log("📡 Background: Making API request:", {
+        url,
+        headers: { ...headers, Authorization: headers.Authorization ? `Bearer [${headers.Authorization.substring(7, 20)}...]` : 'none' }
+      });
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers,
+      });
 
       console.log("📡 Background: API response status:", response.status);
+      console.log("📡 Background: API response headers:", Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error("❌ Background: API error response:", errorText);
+        console.error("❌ Background: Full response details:", {
+          status: response.status,
+          statusText: response.statusText,
+          url: response.url,
+          headers: Object.fromEntries(response.headers.entries())
+        });
         throw new Error(
           `Failed to fetch templates: ${response.status} - ${errorText}`
         );
+      }
+
+      // Check content-type before parsing JSON
+      const contentType = response.headers.get('content-type');
+      console.log("📡 Background: Response content-type:", contentType);
+      
+      if (!contentType || !contentType.includes('application/json')) {
+        const responseText = await response.text();
+        console.error("❌ Background: Expected JSON but got:", responseText.substring(0, 200));
+        throw new Error(`Expected JSON response but got ${contentType}. Response: ${responseText.substring(0, 100)}...`);
       }
 
       const templates = await response.json();
@@ -211,13 +231,19 @@ async function loadUserData() {
         "✅ Background: Successfully fetched templates:",
         templates?.length || 0
       );
+      console.log("📋 Background: Raw templates data:", templates);
       if (templates && templates.length > 0) {
         console.log(
           "📋 Background: Template names:",
           templates.map((t) => t.name)
         );
+        console.log(
+          "📋 Background: Template IDs:",
+          templates.map((t) => t.id)
+        );
       }
       userTemplates = templates || [];
+      console.log("📊 Background: userTemplates after assignment:", userTemplates);
     } catch (error) {
       console.error("❌ Background: Error fetching templates from API:", error);
       userTemplates = [];
@@ -376,16 +402,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
           throw new Error("No valid session available");
         }
 
-        const response = await fetch(
-          "http://localhost:3000/api/extension/templates",
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          }
-        );
+        const response = await fetch(API_CONFIG.getUrl('TEMPLATES'), {
+          method: "GET",
+          headers: API_CONFIG.getHeaders(session.access_token),
+        });
 
         if (!response.ok) {
           throw new Error(`Failed to fetch templates: ${response.status}`);
@@ -487,12 +507,9 @@ async function formatTextWithTemplate(text, template, user) {
     }
 
     // Call your backend API instead of OpenAI directly
-    const response = await fetch("http://localhost:3000/api/format", {
+    const response = await fetch(API_CONFIG.getUrl('FORMAT'), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
+      headers: API_CONFIG.getHeaders(session.access_token),
       body: JSON.stringify({
         templateId: template.id,
         userText: text,
@@ -903,7 +920,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         templateId,
         selectedText,
       });
-      sendResponse({ error: "Missing template ID or selected text" });
+      try {
+        sendResponse({ error: "Missing template ID or selected text" });
+      } catch (e) {
+        console.log("Response channel already closed");
+      }
       return true;
     }
 
@@ -916,7 +937,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Check if user is logged in after ensuring session
         if (!currentUser) {
           console.error("No current user found after session check");
-          sendResponse({ error: "You need to be authenticated first" });
+          try {
+            sendResponse({ error: "You need to be authenticated first" });
+          } catch (e) {
+            console.log("Response channel already closed");
+          }
           return;
         }
 
@@ -924,7 +949,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const template = userTemplates.find((t) => t.id === templateId);
         if (!template) {
           console.error("Template not found:", templateId);
-          sendResponse({ error: "Template not found" });
+          try {
+            sendResponse({ error: "Template not found" });
+          } catch (e) {
+            console.log("Response channel already closed");
+          }
           return;
         }
 
@@ -959,18 +988,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         );
 
         console.log("Sending formatted response");
-        sendResponse({ formattedText });
+        try {
+          sendResponse({ formattedText });
+        } catch (e) {
+          console.log("Response channel already closed, but formatting completed");
+        }
       } catch (error) {
         console.error("Error formatting text from keyboard modal:", error);
         const errorMessage = error.message || "Failed to format text";
-        sendResponse({ error: errorMessage });
+        try {
+          sendResponse({ error: errorMessage });
+        } catch (e) {
+          console.log("Response channel already closed");
+        }
       }
     })();
 
     return true; // Keep message channel open for async response
   }
 
-  return true; // Keep message channel open for other messages
+  // For unknown messages, respond immediately
+  try {
+    sendResponse({ received: true });
+  } catch (e) {
+    console.log("Response channel already closed");
+  }
+  return false;
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {

@@ -37,6 +37,16 @@ const buildConfig = {
     "process.env.NODE_ENV": JSON.stringify(
       process.env.NODE_ENV || "development"
     ),
+    // Inject Vite environment variables for consistency
+    "import.meta.env.VITE_API_BASE_URL": JSON.stringify(
+      process.env.VITE_API_BASE_URL || "http://localhost:3000"
+    ),
+    "import.meta.env.VITE_ENVIRONMENT": JSON.stringify(
+      process.env.VITE_ENVIRONMENT || "development"
+    ),
+    "import.meta.env.MODE": JSON.stringify(
+      process.env.NODE_ENV || "development"
+    ),
   },
   banner: {
     js: `// Prompter Extension - Content Script (Refactored)

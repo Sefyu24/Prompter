@@ -4,8 +4,10 @@
   "description": "Chrome extension for formatting text with AI templates",
   "type": "module",
   "scripts": {
-    "build": "npm run clean && npm run build:all",
-    "build:all": "vite build && npm run build:content",
+    "build": "npm run clean && npm run build:dev",
+    "build:dev": "vite build --mode development && npm run build:content",
+    "build:production": "npm run clean && npm run build:prod", 
+    "build:prod": "vite build --mode production && npm run build:content",
     "build:content": "node scripts/build-content.js",
     "build:vite": "vite build",
     "dev": "npm run build && npm run watch",
