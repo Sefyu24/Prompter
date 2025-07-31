@@ -8,6 +8,8 @@ import { modalStyleManager } from "./modalStyles.js";
 import { templateRenderer } from "./templateRenderer.js";
 import { visualFeedbackManager } from "./visualFeedback.js";
 import { textReplacementManager } from "./textReplacement.js";
+import { domSafetyManager } from "./domSafety.js";
+import { backgroundCommunicator } from "./messageHandler.js";
 import { findEditableParent, getCurrentSelection } from "../utils.js";
 import { CSS_CLASSES, ACTIONS, NOTIFICATION_TYPES } from "../constants.js";
 
@@ -77,7 +79,7 @@ export class ModalManager {
     modalStyleManager.ensureModalStyles();
 
     // Create and show modal
-    this.createModal();
+    await this.createModal();
     this.setupEventListeners();
     this.attachToPage();
     this.focusSearchInput();
@@ -125,45 +127,76 @@ export class ModalManager {
 
   /**
    * Creates the modal DOM structure
-   * @returns {void}
+   * @returns {Promise<void>}
    * @private
    */
-  createModal() {
-    this.modalElement = document.createElement("div");
-    this.modalElement.className = CSS_CLASSES.MODAL_OVERLAY;
-    this.modalElement.setAttribute("role", "dialog");
-    this.modalElement.setAttribute("aria-modal", "true");
-    this.modalElement.setAttribute("aria-labelledby", "prompter-modal-title");
+  async createModal() {
+    try {
+      this.modalElement = document.createElement("div");
+      
+      if (!domSafetyManager.isValidElement(this.modalElement)) {
+        throw new Error("Failed to create modal element");
+      }
+      
+      this.modalElement.className = CSS_CLASSES.MODAL_OVERLAY;
+      domSafetyManager.safeSetAttribute(this.modalElement, "role", "dialog");
+      domSafetyManager.safeSetAttribute(this.modalElement, "aria-modal", "true");
+      domSafetyManager.safeSetAttribute(this.modalElement, "aria-labelledby", "prompter-modal-title");
 
-    this.modalElement.innerHTML = `
-      <div class="${CSS_CLASSES.MODAL}" role="document">
-        <div class="prompter-header">
-          <h3 id="prompter-modal-title">Select Template</h3>
-          <input type="text" 
-                 class="prompter-search" 
-                 placeholder="Type to search templates..." 
-                 autocomplete="off"
-                 aria-label="Search templates"
-                 aria-describedby="prompter-search-hint">
-          <div id="prompter-search-hint" class="sr-only">
-            Use arrow keys to navigate, Enter to select, Esc to close
+      const modalContent = `
+        <div class="${CSS_CLASSES.MODAL}" role="document">
+          <div class="prompter-header">
+            <h3 id="prompter-modal-title">Select Template</h3>
+            <input type="text" 
+                   class="prompter-search" 
+                   placeholder="Type to search templates..." 
+                   autocomplete="off"
+                   aria-label="Search templates"
+                   aria-describedby="prompter-search-hint">
+            <div id="prompter-search-hint" class="sr-only">
+              Use arrow keys to navigate, Enter to select, Esc to close
+            </div>
+          </div>
+          <div class="prompter-template-list" 
+               role="listbox" 
+               aria-label="Available templates"
+               tabindex="-1">
+            ${templateRenderer.renderTemplateList()}
+          </div>
+          <div class="prompter-footer">
+            <span class="prompter-hints">
+              ↑↓ Navigate • Enter Select • Esc Close • 1-9 Quick Select
+            </span>
           </div>
         </div>
-        <div class="prompter-template-list" 
-             role="listbox" 
-             aria-label="Available templates"
-             tabindex="-1">
-          ${templateRenderer.renderTemplateList()}
-        </div>
-        <div class="prompter-footer">
-          <span class="prompter-hints">
-            ↑↓ Navigate • Enter Select • Esc Close • 1-9 Quick Select
-          </span>
-        </div>
-      </div>
-    `;
+      `;
+      
+      // Set content directly since this is a newly created element
+      try {
+        this.modalElement.innerHTML = modalContent;
+        console.log("✅ Modal HTML set successfully");
+      } catch (htmlError) {
+        console.error("Failed to set modal HTML:", htmlError);
+        throw new Error("Failed to set modal content");
+      }
 
-    this.searchInput = this.modalElement.querySelector(".prompter-search");
+      // Use regular querySelector since we just created this element and know it's safe
+      this.searchInput = this.modalElement.querySelector(".prompter-search");
+      
+      if (!this.searchInput) {
+        console.error("❌ Search input not found in modal HTML");
+        console.error("Modal HTML length:", this.modalElement.innerHTML.length);
+        console.error("Modal HTML preview:", this.modalElement.innerHTML.substring(0, 500));
+        console.error("All inputs in modal:", this.modalElement.querySelectorAll("input"));
+        console.error("Elements with 'search' class:", this.modalElement.querySelectorAll(".prompter-search"));
+        throw new Error("Failed to find search input element");
+      }
+      
+      console.log("✅ Search input found:", this.searchInput);
+    } catch (error) {
+      console.error("Modal creation failed:", error);
+      throw error;
+    }
   }
 
   /**
@@ -452,32 +485,21 @@ export class ModalManager {
   /**
    * Requests text formatting from background script
    * @param {Template} template - Template to use for formatting
-   * @returns {Promise<any>} Formatting response
+   * @returns {Promise<string>} Formatted text
    * @private
    */
   async requestTextFormatting(template) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(
-        {
-          action: ACTIONS.FORMAT_WITH_TEMPLATE,
-          templateId: template.id,
-          selectedText: this.selectedText,
-        },
-        (response) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-
-          if (!response) {
-            reject(new Error("No response from background script"));
-            return;
-          }
-
-          resolve(response);
-        }
+    try {
+      const formattedText = await backgroundCommunicator.formatText(
+        template.id, 
+        this.selectedText
       );
-    });
+      
+      return { formattedText };
+    } catch (error) {
+      console.error("Text formatting failed:", error);
+      throw error;
+    }
   }
 
   /**
@@ -522,7 +544,20 @@ export class ModalManager {
    * @private
    */
   attachToPage() {
-    document.body.appendChild(this.modalElement);
+    try {
+      if (!domSafetyManager.isValidElement(this.modalElement)) {
+        throw new Error("Invalid modal element");
+      }
+      
+      if (!document.body) {
+        throw new Error("Document body not available");
+      }
+      
+      document.body.appendChild(this.modalElement);
+    } catch (error) {
+      console.error("Failed to attach modal to page:", error);
+      throw error;
+    }
   }
 
   /**
@@ -531,11 +566,15 @@ export class ModalManager {
    * @private
    */
   focusSearchInput() {
-    if (this.searchInput) {
+    if (domSafetyManager.isValidElement(this.searchInput)) {
       // Use requestAnimationFrame to ensure modal is fully rendered
       requestAnimationFrame(() => {
-        this.searchInput.focus();
+        if (!domSafetyManager.safeFocus(this.searchInput)) {
+          console.warn("Failed to focus search input");
+        }
       });
+    } else {
+      console.warn("Search input element is not valid for focusing");
     }
   }
 
@@ -546,24 +585,29 @@ export class ModalManager {
   async close() {
     if (!this.isVisible) return;
 
-    // Clean up event listeners
-    if (this.eventController) {
-      this.eventController.abort();
-      this.eventController = null;
-    }
+    try {
+      // Clean up event listeners
+      if (this.eventController) {
+        this.eventController.abort();
+        this.eventController = null;
+      }
 
-    // Remove modal from DOM with animation
-    if (this.modalElement) {
-      this.modalElement.style.animation = "prompter-modal-exit 0.2s ease-out";
+      // Remove modal from DOM with animation
+      if (domSafetyManager.isValidElement(this.modalElement)) {
+        this.modalElement.style.animation = "prompter-modal-exit 0.2s ease-out";
 
-      await new Promise((resolve) => {
-        setTimeout(() => {
-          if (this.modalElement && this.modalElement.parentNode) {
-            this.modalElement.parentNode.removeChild(this.modalElement);
-          }
-          resolve();
-        }, 200);
-      });
+        await new Promise((resolve) => {
+          setTimeout(() => {
+            if (domSafetyManager.isValidElement(this.modalElement)) {
+              domSafetyManager.safeRemoveElement(this.modalElement);
+            }
+            resolve();
+          }, 200);
+        });
+      }
+    } catch (error) {
+      console.error("Error during modal close:", error);
+      // Continue with cleanup even if animation fails
     }
 
     // Reset state

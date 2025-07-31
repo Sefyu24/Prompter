@@ -15,6 +15,7 @@ export const SITES = {
   CHATGPT: ["chat.openai.com", "chatgpt.com"],
   CLAUDE: "claude.ai",
   GEMINI: "gemini.google.com",
+  CURSOR: "cursor.com",
 };
 
 /**

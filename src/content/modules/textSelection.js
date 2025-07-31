@@ -5,6 +5,8 @@
  */
 
 import { getCurrentSelection, isTextInput } from "../utils.js";
+import { domSafetyManager } from "./domSafety.js";
+import { backgroundCommunicator } from "./messageHandler.js";
 import { ACTIONS } from "../constants.js";
 
 /**
@@ -70,20 +72,32 @@ export class TextSelectionManager {
    * @private
    */
   captureSelection(event) {
-    const selectionInfo = getCurrentSelection();
+    try {
+      const selectionInfo = getCurrentSelection();
 
-    if (!selectionInfo) {
+      if (!selectionInfo) {
+        this.clearSelection();
+        return;
+      }
+
+      // Validate the target element before storing
+      if (selectionInfo.element && !domSafetyManager.isValidElement(selectionInfo.element)) {
+        console.warn("Invalid target element detected in selection");
+        this.clearSelection();
+        return;
+      }
+
+      this.selectedText = selectionInfo.text;
+      this.targetElement = selectionInfo.element;
+      this.selectionRange = selectionInfo.range;
+
+      // Notify background script if selection is in an input field
+      if (selectionInfo.isInInputField) {
+        this.notifyBackgroundScript(selectionInfo);
+      }
+    } catch (error) {
+      console.error("Error capturing selection:", error);
       this.clearSelection();
-      return;
-    }
-
-    this.selectedText = selectionInfo.text;
-    this.targetElement = selectionInfo.element;
-    this.selectionRange = selectionInfo.range;
-
-    // Notify background script if selection is in an input field
-    if (selectionInfo.isInInputField) {
-      this.notifyBackgroundScript(selectionInfo);
     }
   }
 
@@ -92,13 +106,12 @@ export class TextSelectionManager {
    * @param {SelectionInfo} selectionInfo - Selection information
    * @private
    */
-  notifyBackgroundScript(selectionInfo) {
+  async notifyBackgroundScript(selectionInfo) {
     try {
-      chrome.runtime.sendMessage({
-        action: ACTIONS.TEXT_SELECTED,
-        text: selectionInfo.text,
-        isInInputField: true,
-      });
+      await backgroundCommunicator.notifyTextSelection(
+        selectionInfo.text,
+        true
+      );
     } catch (error) {
       console.warn("Failed to notify background script:", error);
     }
@@ -182,9 +195,24 @@ export class TextSelectionManager {
    * @public
    */
   setSelection(text, element, range = null) {
-    this.selectedText = text;
-    this.targetElement = element;
-    this.selectionRange = range;
+    try {
+      if (typeof text !== 'string') {
+        console.warn("Selection text must be a string");
+        return;
+      }
+
+      if (element && !domSafetyManager.isValidElement(element)) {
+        console.warn("Invalid element provided for selection");
+        return;
+      }
+
+      this.selectedText = text;
+      this.targetElement = element;
+      this.selectionRange = range;
+    } catch (error) {
+      console.error("Error setting selection:", error);
+      this.clearSelection();
+    }
   }
 }
 

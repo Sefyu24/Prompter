@@ -10,6 +10,7 @@ import {
   dispatchReactInputEvent,
   wait,
 } from "../utils.js";
+import { domSafetyManager } from "./domSafety.js";
 import { EVENTS, TIMING } from "../constants.js";
 
 /**
@@ -52,8 +53,20 @@ export class SiteHandler {
    * @protected
    */
   async prepareElement(element) {
-    element.focus();
-    await wait(TIMING.FOCUS_DELAY);
+    try {
+      if (!domSafetyManager.isValidElement(element)) {
+        throw new Error("Invalid element provided for preparation");
+      }
+
+      if (!domSafetyManager.safeFocus(element)) {
+        console.warn("Failed to focus element, continuing anyway");
+      }
+      
+      await wait(TIMING.FOCUS_DELAY);
+    } catch (error) {
+      console.error("Element preparation failed:", error);
+      throw error;
+    }
   }
 
   /**
@@ -113,6 +126,15 @@ export class DefaultHandler extends SiteHandler {
    */
   async replaceText(element, newText, options = {}) {
     try {
+      // Validate inputs
+      if (!domSafetyManager.isValidElement(element)) {
+        throw new Error("Invalid element provided");
+      }
+
+      if (typeof newText !== 'string') {
+        throw new Error("New text must be a string");
+      }
+
       await this.prepareElement(element);
 
       if (element.contentEditable === "true") {
@@ -535,6 +557,125 @@ export class GeminiHandler extends SiteHandler {
 }
 
 /**
+ * Handler for Cursor (cursor.com/agents)
+ * @class CursorHandler
+ * @extends SiteHandler
+ */
+export class CursorHandler extends SiteHandler {
+  constructor() {
+    super("Cursor");
+  }
+
+  /**
+   * @inheritdoc
+   */
+  async replaceText(element, newText, options = {}) {
+    try {
+      await this.prepareElement(element);
+
+      if (element.contentEditable === "true") {
+        return await this.replaceInCursorContentEditable(element, newText);
+      } else if (element.tagName.toLowerCase() === "textarea") {
+        return await this.replaceInCursorTextarea(element, newText);
+      } else {
+        const defaultHandler = new DefaultHandler();
+        return await defaultHandler.replaceText(element, newText, options);
+      }
+    } catch (error) {
+      console.error(`Cursor replacement failed:`, error);
+      return this.createErrorResult(error.message);
+    }
+  }
+
+  /**
+   * Replaces text in Cursor's contenteditable elements
+   * @param {HTMLElement} element - Target element
+   * @param {string} newText - New text
+   * @returns {Promise<ReplacementResult>} Replacement result
+   * @private
+   */
+  async replaceInCursorContentEditable(element, newText) {
+    try {
+      // Method 1: Try modern clipboard API approach for better compatibility
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        // Use insertText for better React compatibility
+        document.execCommand("insertText", false, newText);
+
+        this.triggerCursorEvents(element, newText);
+        return this.createSuccessResult(element);
+      }
+    } catch (error) {
+      console.warn("Cursor execCommand failed:", error);
+    }
+
+    // Method 2: Direct content replacement fallback
+    element.innerHTML = "";
+    element.textContent = newText;
+
+    // Set cursor at end
+    const range = document.createRange();
+    const selection = window.getSelection();
+    range.selectNodeContents(element);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    this.triggerCursorEvents(element, newText);
+    return this.createSuccessResult(element);
+  }
+
+  /**
+   * Replaces text in Cursor's textarea elements
+   * @param {HTMLElement} element - Target element
+   * @param {string} newText - New text
+   * @returns {Promise<ReplacementResult>} Replacement result
+   * @private
+   */
+  async replaceInCursorTextarea(element, newText) {
+    const start = element.selectionStart || 0;
+    const end = element.selectionEnd || 0;
+    const value = element.value || "";
+
+    element.value = value.substring(0, start) + newText + value.substring(end);
+    element.selectionStart = start;
+    element.selectionEnd = start + newText.length;
+
+    this.triggerCursorEvents(element, newText);
+    return this.createSuccessResult(element);
+  }
+
+  /**
+   * Triggers events specific to Cursor's interface
+   * @param {HTMLElement} element - Target element
+   * @param {string} newText - New text
+   * @private
+   */
+  triggerCursorEvents(element, newText) {
+    // Dispatch standard events
+    dispatchEvents(element, ["input", "change"]);
+    
+    // Dispatch React-specific events for better compatibility
+    dispatchReactInputEvent(element, newText);
+
+    // Additional events that might be needed for Cursor's interface
+    element.dispatchEvent(new Event("blur", { bubbles: true }));
+    element.dispatchEvent(new Event("focus", { bubbles: true }));
+    
+    // Custom event for Cursor if they use it
+    element.dispatchEvent(new CustomEvent("cursor-text-change", { 
+      bubbles: true, 
+      detail: { text: newText } 
+    }));
+  }
+}
+
+/**
  * Factory class for creating site-specific handlers
  * @class SiteHandlerFactory
  */
@@ -557,6 +698,8 @@ export class SiteHandlerFactory {
       return new T3ChatHandler();
     } else if (siteDetection.isGemini) {
       return new GeminiHandler();
+    } else if (siteDetection.isCursor) {
+      return new CursorHandler();
     } else {
       return new DefaultHandler();
     }

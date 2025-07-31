@@ -12,6 +12,8 @@ import {
   NOTIFICATION_TYPES,
 } from "../constants.js";
 import { getElementBounds } from "../utils.js";
+import { domSafetyManager } from "./domSafety.js";
+import { errorHandler, getUserFriendlyErrorMessage } from "./errorHandler.js";
 
 /**
  * @typedef {import('../types.js').NotificationConfig} NotificationConfig
@@ -39,14 +41,34 @@ export class VisualFeedbackManager {
    * ```
    */
   showNotification(message, type, duration = TIMING.NOTIFICATION_TIMEOUT) {
-    const notification = this.createNotificationElement(message, type);
-    document.body.appendChild(notification);
-
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.remove();
+    try {
+      const notification = this.createNotificationElement(message, type);
+      
+      if (!domSafetyManager.isValidElement(notification)) {
+        throw new Error("Failed to create notification element");
       }
-    }, duration);
+      
+      if (!document.body) {
+        throw new Error("Document body not available");
+      }
+      
+      document.body.appendChild(notification);
+
+      setTimeout(() => {
+        if (domSafetyManager.isValidElement(notification)) {
+          domSafetyManager.safeRemoveElement(notification);
+        }
+      }, duration);
+    } catch (error) {
+      errorHandler.handleError(error, 'visualFeedback.showNotification', {
+        message,
+        type,
+        duration
+      });
+      
+      // Fallback: log to console if notification fails
+      console.log(`[${type.toUpperCase()}] ${message}`);
+    }
   }
 
   /**
@@ -302,10 +324,29 @@ export class VisualFeedbackManager {
 
   /**
    * Shows an error notification
-   * @param {string} message - Error message
+   * @param {string|Error} message - Error message or Error object
    */
   showError(message) {
-    this.showNotification(message, NOTIFICATION_TYPES.ERROR);
+    const errorMessage = message instanceof Error 
+      ? getUserFriendlyErrorMessage(message)
+      : message;
+    
+    this.showNotification(errorMessage, NOTIFICATION_TYPES.ERROR);
+  }
+
+  /**
+   * Shows user-friendly error for technical errors
+   * @param {Error} error - Error object
+   * @param {string} context - Error context
+   * @param {number} [duration] - Display duration
+   */
+  showUserFriendlyError(error, context, duration) {
+    // Log technical error for debugging
+    errorHandler.handleError(error, context);
+    
+    // Show user-friendly message
+    const friendlyMessage = getUserFriendlyErrorMessage(error);
+    this.showNotification(friendlyMessage, NOTIFICATION_TYPES.ERROR, duration);
   }
 
   /**

@@ -9,6 +9,9 @@ import { textSelectionManager } from "./modules/textSelection.js";
 import { textReplacementManager } from "./modules/textReplacement.js";
 import { visualFeedbackManager } from "./modules/visualFeedback.js";
 import { handleKeyboardModal } from "./modules/modalManager.js";
+import { errorHandler } from "./modules/errorHandler.js";
+import { messageHandler } from "./modules/messageHandler.js";
+import { domSafetyManager } from "./modules/domSafety.js";
 import { ACTIONS, NOTIFICATION_TYPES } from "./constants.js";
 
 /**
@@ -21,39 +24,47 @@ console.log(`📍 Site Handler: ${textReplacementManager.getSiteHandlerInfo()}`)
 /**
  * Enhanced message listener with better error handling and logging
  */
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("📨 Received message:", message.action || message.type);
+chrome.runtime.onMessage.addListener(
+  errorHandler.wrapFunction(
+    (message, sender, sendResponse) => {
+      console.log("📨 Received message:", message.action || message.type);
 
-  // Add detailed logging for showKeyboardModal
-  if (message.action === "showKeyboardModal") {
-    console.log("🔍 DEBUGGING received showKeyboardModal:", {
-      action: message.action,
-      templatesCount: message.templates?.length || 0,
-      userEmail: message.user?.email,
-      templateNames: message.templates?.map((t) => t.name) || [],
-      hasTemplates: message.templates && message.templates.length > 0,
-      error: message.error,
-      fullMessage: message,
-    });
-  }
+      // Add detailed logging for showKeyboardModal
+      if (message.action === "showKeyboardModal") {
+        console.log("🔍 DEBUGGING received showKeyboardModal:", {
+          action: message.action,
+          templatesCount: message.templates?.length || 0,
+          userEmail: message.user?.email,
+          templateNames: message.templates?.map((t) => t.name) || [],
+          hasTemplates: message.templates && message.templates.length > 0,
+          error: message.error,
+          fullMessage: message,
+        });
+      }
 
-  // Always send a response to prevent port closure
-  sendResponse({ received: true });
+      // Always send a response to prevent port closure
+      try {
+        sendResponse({ received: true });
+      } catch (responseError) {
+        console.warn("Failed to send response:", responseError);
+      }
 
-  // Handle different message types
-  handleMessage(message)
-    .then(() => {
-      console.log("✅ Message handled successfully");
-    })
-    .catch((error) => {
-      console.error("❌ Message handling failed:", error);
-      visualFeedbackManager.showError(
-        `Failed to process request: ${error.message}`
-      );
-    });
+      // Handle different message types
+      handleMessage(message)
+        .then(() => {
+          console.log("✅ Message handled successfully");
+        })
+        .catch((error) => {
+          errorHandler.handleError(error, 'messageHandling', { message });
+          visualFeedbackManager.showUserFriendlyError(error, 'messageHandling');
+        });
 
-  return true; // Keep message channel open for async responses
-});
+      return true; // Keep message channel open for async responses
+    },
+    'messageListener',
+    { retries: 0 } // Don't retry message handling
+  )
+);
 
 /**
  * Handles incoming messages from the background script
@@ -201,32 +212,17 @@ function enhanceAccessibility() {
  * @returns {void}
  */
 function setupErrorBoundary() {
-  window.addEventListener("error", (event) => {
-    console.error("🚨 Content Script Error:", {
-      message: event.message,
-      filename: event.filename,
-      lineno: event.lineno,
-      colno: event.colno,
-      error: event.error,
-    });
-
-    // Show user-friendly error message
-    visualFeedbackManager.showError(
-      "Extension encountered an error. Please try again."
-    );
+  // The errorHandler already sets up global error handling,
+  // but we can add content-script specific handling here
+  
+  errorHandler.addErrorListener((error, context, metadata) => {
+    // Show user-friendly errors for critical failures
+    if (context.includes('critical') || context.includes('modal')) {
+      visualFeedbackManager.showUserFriendlyError(error, context);
+    }
   });
 
-  window.addEventListener("unhandledrejection", (event) => {
-    console.error("🚨 Unhandled Promise Rejection:", event.reason);
-
-    // Show user-friendly error message
-    visualFeedbackManager.showError(
-      "Extension operation failed. Please try again."
-    );
-
-    // Prevent the error from appearing in console
-    event.preventDefault();
-  });
+  console.log('🛡️ Error boundary established with centralized error handler');
 }
 
 /**

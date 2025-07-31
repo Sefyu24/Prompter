@@ -32,6 +32,7 @@ export function detectCurrentSite() {
     isChatGPT: SITES.CHATGPT.includes(hostname),
     isClaude: hostname === SITES.CLAUDE,
     isGemini: hostname === SITES.GEMINI,
+    isCursor: hostname === SITES.CURSOR,
   };
 }
 

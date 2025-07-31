@@ -7,6 +7,7 @@
 import { SiteHandlerFactory } from "./siteHandlers.js";
 import { visualFeedbackManager } from "./visualFeedback.js";
 import { textSelectionManager } from "./textSelection.js";
+import { domSafetyManager } from "./domSafety.js";
 import {
   findEditableParent,
   findEditableElementBySelectors,
@@ -92,23 +93,37 @@ export class TextReplacementManager {
    * @private
    */
   async findTargetElement(targetElement, useStoredRange) {
-    // Use provided target element if available
-    if (targetElement) {
-      return targetElement;
+    try {
+      // Use provided target element if available and valid
+      if (targetElement && domSafetyManager.isValidElement(targetElement)) {
+        return targetElement;
+      }
+
+      // Try to use stored selection range first
+      if (useStoredRange) {
+        const element = this.findElementFromStoredRange();
+        if (element && domSafetyManager.isValidElement(element)) {
+          return element;
+        }
+      }
+
+      // Try current selection
+      const currentElement = this.findElementFromCurrentSelection();
+      if (currentElement && domSafetyManager.isValidElement(currentElement)) {
+        return currentElement;
+      }
+
+      // Fallback to common selectors
+      const fallbackElement = this.findElementBySelectors();
+      if (fallbackElement && domSafetyManager.isValidElement(fallbackElement)) {
+        return fallbackElement;
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error finding target element:", error);
+      return null;
     }
-
-    // Try to use stored selection range first
-    if (useStoredRange) {
-      const element = this.findElementFromStoredRange();
-      if (element) return element;
-    }
-
-    // Try current selection
-    const currentElement = this.findElementFromCurrentSelection();
-    if (currentElement) return currentElement;
-
-    // Fallback to common selectors
-    return this.findElementBySelectors();
   }
 
   /**
@@ -159,10 +174,18 @@ export class TextReplacementManager {
    * @returns {Promise<ReplacementResult>} Replacement result
    */
   async replaceTextFromModal(newText, selectedText, targetElement) {
-    if (!targetElement) {
+    // Validate inputs
+    if (!domSafetyManager.isValidElement(targetElement)) {
       return {
         success: false,
-        error: "No target element provided",
+        error: "No valid target element provided",
+      };
+    }
+
+    if (typeof newText !== 'string') {
+      return {
+        success: false,
+        error: "Invalid text provided for replacement",
       };
     }
 
@@ -174,8 +197,15 @@ export class TextReplacementManager {
     });
 
     try {
+      // Check element visibility and accessibility
+      if (!domSafetyManager.isElementVisible(targetElement)) {
+        console.warn("Target element is not visible");
+      }
+
       // Focus the element first
-      targetElement.focus();
+      if (!domSafetyManager.safeFocus(targetElement)) {
+        console.warn("Failed to focus target element, continuing anyway");
+      }
 
       // Use the site handler to perform replacement
       const result = await this.siteHandler.replaceText(
@@ -188,7 +218,12 @@ export class TextReplacementManager {
 
       if (result.success) {
         // Show visual feedback
-        await visualFeedbackManager.showTextReplacementFeedback(targetElement);
+        try {
+          await visualFeedbackManager.showTextReplacementFeedback(targetElement);
+        } catch (feedbackError) {
+          console.warn("Visual feedback failed:", feedbackError);
+          // Don't fail the operation if feedback fails
+        }
       }
 
       return result;
@@ -226,21 +261,22 @@ export class TextReplacementManager {
     try {
       const element = await this.findTargetElement(targetElement, false);
 
-      if (!element) {
+      if (!domSafetyManager.isValidElement(element)) {
         return {
           valid: false,
-          reason: "No editable element found",
+          reason: "No valid editable element found",
         };
       }
 
-      // Check if element is visible and enabled
-      if (element.offsetParent === null) {
+      // Check if element is visible using DOM safety manager
+      if (!domSafetyManager.isElementVisible(element)) {
         return {
           valid: false,
           reason: "Target element is not visible",
         };
       }
 
+      // Check if element is disabled or readonly
       if (element.disabled || element.readOnly) {
         return {
           valid: false,
@@ -248,8 +284,17 @@ export class TextReplacementManager {
         };
       }
 
+      // Additional safety checks
+      if (!element.isConnected) {
+        return {
+          valid: false,
+          reason: "Target element is not connected to the DOM",
+        };
+      }
+
       return { valid: true };
     } catch (error) {
+      console.error("Validation error:", error);
       return {
         valid: false,
         reason: `Validation error: ${error.message}`,
