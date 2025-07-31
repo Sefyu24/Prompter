@@ -2,6 +2,142 @@ import { supabase } from "./supabase.js";
 import { API_CONFIG } from "./config.js";
 import { createIcons, Zap, Settings } from 'lucide';
 
+// Notification system for popup
+class PopupNotificationManager {
+  constructor() {
+    this.stylesAdded = false;
+    this.ensureStyles();
+  }
+
+  showNotification(message, type = 'info', duration = 3000) {
+    const notification = this.createNotificationElement(message, type);
+    document.body.appendChild(notification);
+
+    // Auto remove after duration
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, duration);
+  }
+
+  createNotificationElement(message, type) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    
+    const colors = this.getNotificationColors(type);
+    
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      background-color: ${colors.bgColor};
+      color: #ffffff;
+      border: 1px solid ${colors.borderColor};
+      border-radius: 8px;
+      box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.15);
+      z-index: 10000;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      max-width: 300px;
+      animation: slideInRight 0.3s ease-out;
+    `;
+
+    return notification;
+  }
+
+  getNotificationColors(type) {
+    switch (type) {
+      case 'error':
+        return { 
+          bgColor: '#ef4444', 
+          borderColor: '#dc2626' 
+        };
+      case 'success':
+        return { 
+          bgColor: '#10b981', 
+          borderColor: '#059669' 
+        };
+      default:
+        return { 
+          bgColor: '#3b82f6', 
+          borderColor: '#2563eb' 
+        };
+    }
+  }
+
+  ensureStyles() {
+    if (this.stylesAdded) return;
+
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideInRight {
+        from {
+          opacity: 0;
+          transform: translateX(100px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    this.stylesAdded = true;
+  }
+
+  showError(message) {
+    this.showNotification(message, 'error');
+  }
+
+  showSuccess(message) {
+    this.showNotification(message, 'success');
+  }
+
+  showInfo(message) {
+    this.showNotification(message, 'info');
+  }
+}
+
+// Create global notification manager
+const notificationManager = new PopupNotificationManager();
+
+// Helper function to get user-friendly error messages
+function getUserFriendlyErrorMessage(error, context = '') {
+  if (error.message?.includes('fetch')) {
+    return 'Network error. Please check your connection and try again.';
+  }
+  
+  if (error.message?.includes('401') || error.message?.includes('unauthorized')) {
+    return 'Session expired. Please sign in again.';
+  }
+  
+  if (error.message?.includes('403') || error.message?.includes('forbidden')) {
+    return 'Access denied. Please check your permissions.';
+  }
+  
+  if (error.message?.includes('404')) {
+    return 'Resource not found. Please try again later.';
+  }
+  
+  if (error.message?.includes('500') || error.message?.includes('server')) {
+    return 'Server error. Please try again in a few moments.';
+  }
+  
+  if (error.message?.includes('timeout')) {
+    return 'Request timed out. Please try again.';
+  }
+  
+  if (context === 'stats' || context === 'templates' || context === 'membership') {
+    return `Failed to load ${context}. Please refresh and try again.`;
+  }
+  
+  // Generic fallback
+  return error.message || 'An unexpected error occurred. Please try again.';
+}
+
 document.addEventListener("DOMContentLoaded", async function () {
   // Initialize Lucide icons
   createIcons({
@@ -48,13 +184,13 @@ document.addEventListener("DOMContentLoaded", async function () {
       showHomePage(); // Manually show home page since we're not using Supabase auth state change
     } catch (error) {
       console.error("❌ Popup: Error handling auth success:", error);
-      showError("Authentication failed. Please try again.");
+      notificationManager.showError("Authentication failed. Please try again.");
     }
   }
 
   function handleAuthError(errorMessage) {
     console.error("Auth error:", errorMessage);
-    showError("Authentication failed: " + errorMessage);
+    notificationManager.showError("Authentication failed: " + errorMessage);
     showLoginPage();
   }
   // Your code here
@@ -137,7 +273,7 @@ document.addEventListener("DOMContentLoaded", async function () {
           
       } catch (error) {
         console.error("Sign out error:", error);
-        showError("Failed to sign out");
+        notificationManager.showError("Failed to sign out");
       }
     });
   }
@@ -176,7 +312,7 @@ document.addEventListener("DOMContentLoaded", async function () {
       await chrome.tabs.create({ url: data.url });
     } catch (error) {
       console.error("Login error:", error);
-      showError("Login failed: " + error.message);
+      notificationManager.showError("Login failed: " + error.message);
     }
   }
 
@@ -229,6 +365,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         console.log("Stats loaded successfully:", stats);
       } catch (error) {
         console.error("Error fetching stats from API:", error);
+        notificationManager.showError(getUserFriendlyErrorMessage(error, 'stats'));
         // Set default stats for later use
         window.currentStats = { monthly_requests: 0 };
       }
@@ -252,6 +389,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         console.log("Templates loaded successfully from API:", templates?.length || 0);
       } catch (error) {
         console.error("Error fetching templates from API:", error);
+        notificationManager.showError(getUserFriendlyErrorMessage(error, 'templates'));
         displayTemplates([]);
       }
 
@@ -259,7 +397,7 @@ document.addEventListener("DOMContentLoaded", async function () {
       await loadHistory();
     } catch (error) {
       console.error("Error loading dashboard:", error);
-      showError("Failed to load dashboard");
+      notificationManager.showError("Failed to load dashboard");
     }
   }
 
@@ -282,6 +420,7 @@ document.addEventListener("DOMContentLoaded", async function () {
       console.log("User membership status loaded successfully:", userData);
     } catch (error) {
       console.error("Error fetching user membership status:", error);
+      notificationManager.showError(getUserFriendlyErrorMessage(error, 'membership'));
       // Set default values if error
       displayMembershipStatus({ subscription: { isPro: false } });
     }
@@ -550,6 +689,9 @@ document.addEventListener("DOMContentLoaded", async function () {
       // Copy the original text without any escaping since we're getting it directly from the data
       await navigator.clipboard.writeText(text);
 
+      // Show success notification
+      notificationManager.showSuccess("Copied to clipboard!");
+
       // Show feedback
       const copyBtn = document.querySelector(`[data-copy-id="${itemId}"]`);
       const originalText = copyBtn.textContent;
@@ -564,7 +706,7 @@ document.addEventListener("DOMContentLoaded", async function () {
       }, 2000);
     } catch (error) {
       console.error("Failed to copy:", error);
-      alert("Failed to copy to clipboard");
+      notificationManager.showError("Failed to copy to clipboard");
     }
   }
 
@@ -593,7 +735,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         
         if (!sessionData) {
           console.log("No user found, cannot clear history");
-          alert("Please log in to clear history");
+          notificationManager.showError("Please log in to clear history");
           return;
         }
 
@@ -602,7 +744,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         
         if (!user || !user.id) {
           console.log("No user ID found, cannot clear history");
-          alert("Please log in to clear history");
+          notificationManager.showError("Please log in to clear history");
           return;
         }
 
@@ -610,10 +752,11 @@ document.addEventListener("DOMContentLoaded", async function () {
         const historyKey = `formatting_history_${user.id}`;
         await chrome.storage.local.remove([historyKey]);
         displayHistory([]);
+        notificationManager.showSuccess("History cleared successfully!");
         console.log("History cleared for user:", user.id);
       } catch (error) {
         console.error("Error clearing history:", error);
-        alert("Failed to clear history");
+        notificationManager.showError("Failed to clear history");
       }
     }
   }
@@ -631,7 +774,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   function showError(message) {
     console.error(message);
-    alert(message);
+    notificationManager.showError(message);
   }
 
   // Handle upgrade button click
