@@ -204,6 +204,9 @@ function replaceSelectedText(newText) {
       if (editableElement._valueTracker) {
         editableElement._valueTracker.setValue("");
       }
+
+      // Show visual feedback after successful replacement
+      showTextReplacementFeedback(editableElement);
     } catch (error) {
       // Error inserting text - fallback to manual replacement
       // Fallback to manual replacement if library fails
@@ -411,22 +414,28 @@ function findEditableParent(node) {
 function showNotification(message, type) {
   const notification = document.createElement("div");
   notification.textContent = message;
+
+  // Determine colors based on type
+  let bgColor, borderColor;
+  if (type === "error") {
+    bgColor = "oklch(0.629 0.1902 23.0704)";
+    borderColor = "oklch(0.629 0.1902 23.0704)";
+  } else if (type === "success") {
+    bgColor = "oklch(0.7176 0.1686 142.495)"; // Green for success
+    borderColor = "oklch(0.7176 0.1686 142.495)";
+  } else {
+    bgColor = "oklch(0.5393 0.2713 286.7462)"; // Purple for info
+    borderColor = "oklch(0.5393 0.2713 286.7462)";
+  }
+
   notification.style.cssText = `
     position: fixed;
     top: 20px;
     right: 20px;
     padding: 12px 20px;
-    background-color: ${
-      type === "error"
-        ? "oklch(0.629 0.1902 23.0704)"
-        : "oklch(0.5393 0.2713 286.7462)"
-    };
+    background-color: ${bgColor};
     color: oklch(1 0 0);
-    border: 1px solid ${
-      type === "error"
-        ? "oklch(0.629 0.1902 23.0704)"
-        : "oklch(0.5393 0.2713 286.7462)"
-    };
+    border: 1px solid ${borderColor};
     border-radius: calc(1.4rem - 6px);
     box-shadow: 0px 2px 3px 0px hsl(0 0% 0% / 0.16), 0px 1px 2px -1px hsl(0 0% 0% / 0.16);
     z-index: 10000;
@@ -442,6 +451,126 @@ function showNotification(message, type) {
   setTimeout(() => {
     notification.remove();
   }, 3000);
+}
+
+/**
+ * Show visual feedback when text is replaced
+ * @param {HTMLElement} element - The element where text was replaced
+ */
+function showTextReplacementFeedback(element) {
+  if (!element) return;
+
+  // Add CSS for transition if not already added
+  addTransitionStyles();
+
+  // Create overlay effect
+  const overlay = document.createElement("div");
+  overlay.className = "prompter-replacement-overlay";
+
+  // Get element position for overlay positioning
+  const rect = element.getBoundingClientRect();
+  const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+  const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+  overlay.style.cssText = `
+    position: absolute;
+    top: ${rect.top + scrollTop}px;
+    left: ${rect.left + scrollLeft}px;
+    width: ${rect.width}px;
+    height: ${rect.height}px;
+    pointer-events: none;
+    z-index: 999999;
+    border-radius: ${window.getComputedStyle(element).borderRadius || "4px"};
+  `;
+
+  document.body.appendChild(overlay);
+
+  // Add highlight effect to the element itself
+  const originalTransition = element.style.transition;
+  const originalBoxShadow = element.style.boxShadow;
+  const originalBorder = element.style.border;
+
+  // Apply highlight effect
+  element.style.transition = "all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+  element.style.boxShadow =
+    "0 0 0 2px rgba(139, 92, 246, 0.5), 0 0 20px rgba(139, 92, 246, 0.3)";
+  element.style.border = "1px solid rgba(139, 92, 246, 0.6)";
+
+  // Trigger overlay animation
+  requestAnimationFrame(() => {
+    overlay.style.animation = "prompter-replacement-pulse 0.6s ease-out";
+  });
+
+  // Cleanup after animation
+  setTimeout(() => {
+    // Restore original styles
+    element.style.transition = originalTransition;
+    element.style.boxShadow = originalBoxShadow;
+    element.style.border = originalBorder;
+
+    // Remove overlay
+    if (overlay.parentNode) {
+      overlay.parentNode.removeChild(overlay);
+    }
+  }, 600);
+
+  // Show success notification
+  showNotification("✨ Text formatted successfully!", "success");
+}
+
+/**
+ * Add CSS styles for text replacement transitions
+ */
+function addTransitionStyles() {
+  if (document.getElementById("prompter-transition-styles")) {
+    return; // Styles already added
+  }
+
+  const style = document.createElement("style");
+  style.id = "prompter-transition-styles";
+  style.textContent = `
+    .prompter-replacement-overlay {
+      background: linear-gradient(45deg, 
+        rgba(139, 92, 246, 0.15) 0%, 
+        rgba(139, 92, 246, 0.25) 50%, 
+        rgba(139, 92, 246, 0.15) 100%);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+    }
+    
+    @keyframes prompter-replacement-pulse {
+      0% {
+        transform: scale(1);
+        opacity: 0;
+        background: rgba(139, 92, 246, 0.3);
+      }
+      25% {
+        transform: scale(1.02);
+        opacity: 1;
+        background: rgba(139, 92, 246, 0.2);
+      }
+      75% {
+        transform: scale(1.01);
+        opacity: 0.8;
+        background: rgba(139, 92, 246, 0.1);
+      }
+      100% {
+        transform: scale(1);
+        opacity: 0;
+        background: rgba(139, 92, 246, 0.05);
+      }
+    }
+    
+    @keyframes prompter-glow-fade {
+      0% {
+        box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.8), 0 0 25px rgba(139, 92, 246, 0.5);
+      }
+      100% {
+        box-shadow: 0 0 0 0px rgba(139, 92, 246, 0), 0 0 0px rgba(139, 92, 246, 0);
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
 }
 
 // ===== KEYBOARD MODAL SYSTEM =====
@@ -969,8 +1098,6 @@ function selectTemplate(index) {
 
           // Replace the text using existing function
           replaceSelectedTextWithFormatted(response.formattedText);
-
-          showNotification("Text formatted successfully!", "info");
         } catch (error) {
           console.error("Error during text replacement:", error);
           showNotification("Failed to replace text", "error");
@@ -1069,6 +1196,9 @@ function replaceSelectedTextWithFormatted(newText) {
       modalTargetElement.dispatchEvent(new Event("blur", { bubbles: true }));
       modalTargetElement.dispatchEvent(new Event("focus", { bubbles: true }));
     }, 10);
+
+    // Show visual feedback after successful replacement
+    showTextReplacementFeedback(modalTargetElement);
   } catch (error) {
     console.error("Error replacing text from modal:", error);
     fallbackTextReplacement(modalTargetElement, newText);
