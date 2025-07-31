@@ -191,24 +191,40 @@ document.addEventListener("DOMContentLoaded", async function () {
           user.user_metadata.avatar_url;
       }
 
-      // Fetch user stats from the view
-      const { data: stats, error: statsError } = await supabase
-        .from("user_dashboard_stats")
-        .select("*")
-        .eq("user_id", user.id)
-        .single();
+      // Fetch user stats from backend API
+      try {
+        // Get current session following the established pattern
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError || !session) {
+          throw new Error("No active session");
+        }
 
-      if (statsError) {
-        console.error("Error fetching stats:", statsError);
+        const response = await fetch("http://localhost:3000/api/extension/stats", {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch stats: ${response.status}`);
+        }
+
+        const stats = await response.json();
+        
+        // Update stats display - now showing monthly requests
+        document.getElementById("total-requests").textContent =
+          stats.monthly_requests || "0";
+        document.getElementById("total-templates").textContent =
+          stats.total_templates || "0";
+          
+        console.log("Stats loaded successfully:", stats);
+      } catch (error) {
+        console.error("Error fetching stats from API:", error);
         // Set default values if error
         document.getElementById("total-requests").textContent = "0";
         document.getElementById("total-templates").textContent = "0";
-      } else {
-        // Update stats
-        document.getElementById("total-requests").textContent =
-          stats.total_formatting_requests || "0";
-        document.getElementById("total-templates").textContent =
-          stats.total_templates || "0";
       }
 
       // Fetch user's templates

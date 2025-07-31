@@ -834,6 +834,15 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
       userTemplates.map((t) => t.name)
     );
 
+    console.log("🔍 DEBUGGING showKeyboardModal message:", {
+      action: "showKeyboardModal",
+      templatesCount: userTemplates?.length || 0,
+      userEmail: currentUser?.email,
+      templateNames: userTemplates?.map((t) => t.name) || [],
+      hasTemplates: userTemplates && userTemplates.length > 0,
+      tabId: tab.id,
+    });
+
     // Send templates to content script to show modal
     chrome.tabs.sendMessage(tab.id, {
       action: "showKeyboardModal",

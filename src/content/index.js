@@ -24,6 +24,19 @@ console.log(`📍 Site Handler: ${textReplacementManager.getSiteHandlerInfo()}`)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("📨 Received message:", message.action || message.type);
 
+  // Add detailed logging for showKeyboardModal
+  if (message.action === "showKeyboardModal") {
+    console.log("🔍 DEBUGGING received showKeyboardModal:", {
+      action: message.action,
+      templatesCount: message.templates?.length || 0,
+      userEmail: message.user?.email,
+      templateNames: message.templates?.map((t) => t.name) || [],
+      hasTemplates: message.templates && message.templates.length > 0,
+      error: message.error,
+      fullMessage: message,
+    });
+  }
+
   // Always send a response to prevent port closure
   sendResponse({ received: true });
 
