@@ -1,5 +1,5 @@
 // Content script - runs on web pages
-import insertTextAtCursor from 'insert-text-at-cursor';
+import insertTextAtCursor from "insert-text-at-cursor";
 
 // Extension loaded
 
@@ -8,26 +8,31 @@ let targetElement = null;
 let selectionRange = null;
 
 // Check which site we're on for site-specific handling
-const isPerplexity = window.location.hostname === 'www.perplexity.ai';
-const isT3Chat = window.location.hostname === 't3.chat' || window.location.hostname === 'www.t3.chat';
-const isChatGPT = window.location.hostname === 'chat.openai.com' || window.location.hostname === 'chatgpt.com';
-const isClaude = window.location.hostname === 'claude.ai';
-const isGemini = window.location.hostname === 'gemini.google.com';
+const isPerplexity = window.location.hostname === "www.perplexity.ai";
+const isT3Chat =
+  window.location.hostname === "t3.chat" ||
+  window.location.hostname === "www.t3.chat";
+const isChatGPT =
+  window.location.hostname === "chat.openai.com" ||
+  window.location.hostname === "chatgpt.com";
+const isClaude = window.location.hostname === "claude.ai";
+const isGemini = window.location.hostname === "gemini.google.com";
 
 // Listen for text selection - use multiple events for better compatibility
-const captureSelection = function(e) {
+const captureSelection = function (e) {
   const selection = window.getSelection();
   selectedText = selection.toString().trim();
 
   if (selectedText.length > 0) {
     // Store the element that contains the selection
     if (selection.anchorNode) {
-      targetElement = selection.anchorNode.parentElement || selection.anchorNode;
+      targetElement =
+        selection.anchorNode.parentElement || selection.anchorNode;
     } else if (e && e.target) {
       // Fallback to event target
       targetElement = e.target;
     }
-    
+
     // Store the selection range for later use
     if (selection.rangeCount > 0) {
       selectionRange = selection.getRangeAt(0).cloneRange();
@@ -54,7 +59,7 @@ document.addEventListener("selectionchange", captureSelection);
 // For t3.chat, also listen on the document body
 if (isT3Chat) {
   setTimeout(() => {
-    const body = document.querySelector('body');
+    const body = document.querySelector("body");
     if (body) {
       body.addEventListener("mouseup", captureSelection);
     }
@@ -90,10 +95,10 @@ function isTextInput(element) {
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Message received
-  
+
   // Always send a response to prevent port closure
-  sendResponse({received: true});
-  
+  sendResponse({ received: true });
+
   if (message.action === "replaceText") {
     // Replacing text
     replaceSelectedText(message.newText);
@@ -105,7 +110,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Handle keyboard shortcut modal
     handleKeyboardModal(message);
   }
-  
+
   return true; // Keep message channel open for async responses
 });
 
@@ -116,7 +121,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  */
 function replaceSelectedText(newText) {
   if (isPerplexity || isT3Chat) {
-    const siteName = isPerplexity ? 'Perplexity.ai' : 'T3.chat';
+    const siteName = isPerplexity ? "Perplexity.ai" : "T3.chat";
     // Starting text replacement
   }
 
@@ -125,7 +130,9 @@ function replaceSelectedText(newText) {
 
   // Try to use stored selection range first (better for perplexity.ai)
   if (selectionRange && targetElement) {
-    editableElement = findEditableParent(selectionRange.commonAncestorContainer);
+    editableElement = findEditableParent(
+      selectionRange.commonAncestorContainer
+    );
     useStoredRange = true;
   }
 
@@ -138,22 +145,22 @@ function replaceSelectedText(newText) {
       editableElement = findEditableParent(container);
     }
   }
-  
+
   // For t3.chat, try finding the input field directly
   if (!editableElement && isT3Chat) {
     // Searching for input field directly
     // Try common selectors for chat input fields
     const selectors = [
-      'textarea',
+      "textarea",
       'input[type="text"]',
       '[contenteditable="true"]',
       '[role="textbox"]',
-      '.chat-input',
-      '.message-input',
-      '#message-input',
-      'div[contenteditable]'
+      ".chat-input",
+      ".message-input",
+      "#message-input",
+      "div[contenteditable]",
     ];
-    
+
     for (const selector of selectors) {
       const element = document.querySelector(selector);
       if (element) {
@@ -172,13 +179,13 @@ function replaceSelectedText(newText) {
 
       // Focus the element first to ensure proper insertion
       editableElement.focus();
-      
+
       // For perplexity.ai and t3.chat, try a more aggressive approach
       if (isPerplexity || isT3Chat) {
         replaceTextForPerplexity(editableElement, newText, useStoredRange);
       } else {
         // Handle contenteditable elements differently than textarea/input
-        if (editableElement.contentEditable === 'true') {
+        if (editableElement.contentEditable === "true") {
           // For contenteditable, we need to handle newlines properly
           insertTextIntoContentEditable(editableElement, newText);
         } else {
@@ -186,18 +193,17 @@ function replaceSelectedText(newText) {
           insertTextAtCursor(editableElement, newText);
         }
       }
-      
+
       // Trigger multiple events to ensure the page recognizes the change
-      const events = ['input', 'change', 'keyup', 'paste'];
-      events.forEach(eventType => {
+      const events = ["input", "change", "keyup", "paste"];
+      events.forEach((eventType) => {
         editableElement.dispatchEvent(new Event(eventType, { bubbles: true }));
       });
-      
+
       // For React apps, also dispatch a synthetic event
       if (editableElement._valueTracker) {
-        editableElement._valueTracker.setValue('');
+        editableElement._valueTracker.setValue("");
       }
-      
     } catch (error) {
       // Error inserting text - fallback to manual replacement
       // Fallback to manual replacement if library fails
@@ -217,53 +223,57 @@ function replaceSelectedText(newText) {
 function replaceTextForPerplexity(element, newText, useStoredRange) {
   try {
     // Attempting text replacement
-    
+
     // Method 1: Use execCommand which works better with contenteditable
-    if (element.contentEditable === 'true') {
+    if (element.contentEditable === "true") {
       // Focus the element
       element.focus();
-      
+
       // Select all content
-      document.execCommand('selectAll', false, null);
-      
+      document.execCommand("selectAll", false, null);
+
       // Delete the selected content
-      document.execCommand('delete', false, null);
-      
+      document.execCommand("delete", false, null);
+
       // Insert the new text using insertText command
       // This maintains undo/redo history and triggers proper events
-      document.execCommand('insertText', false, newText);
-      
+      document.execCommand("insertText", false, newText);
+
       // Used execCommand method
-      
+
       // Additional event triggering for React
-      const inputEvent = new InputEvent('input', {
+      const inputEvent = new InputEvent("input", {
         bubbles: true,
         cancelable: true,
-        inputType: 'insertText',
-        data: newText
+        inputType: "insertText",
+        data: newText,
       });
       element.dispatchEvent(inputEvent);
-      
+
       return;
     }
-    
+
     // Method 2: Try contenteditable approach
-    if (element.contentEditable === 'true') {
+    if (element.contentEditable === "true") {
       insertTextIntoContentEditable(element, newText);
       // Used contenteditable method
       return;
     }
-    
+
     // Method 3: Try direct value assignment for input/textarea
-    if (element.tagName.toLowerCase() === 'textarea' || element.tagName.toLowerCase() === 'input') {
+    if (
+      element.tagName.toLowerCase() === "textarea" ||
+      element.tagName.toLowerCase() === "input"
+    ) {
       const start = element.selectionStart || 0;
       const end = element.selectionEnd || 0;
-      const value = element.value || '';
-      
-      element.value = value.substring(0, start) + newText + value.substring(end);
+      const value = element.value || "";
+
+      element.value =
+        value.substring(0, start) + newText + value.substring(end);
       element.selectionStart = start;
       element.selectionEnd = start + newText.length;
-      
+
       // For t3.chat, prevent clipboard event conflicts
       if (isT3Chat) {
         // Stop propagation to prevent React errors
@@ -271,27 +281,32 @@ function replaceTextForPerplexity(element, newText, useStoredRange) {
           e.stopPropagation();
           e.preventDefault();
         };
-        
-        element.addEventListener('paste', stopEvent, { once: true, capture: true });
-        element.addEventListener('input', stopEvent, { once: true, capture: true });
-        
+
+        element.addEventListener("paste", stopEvent, {
+          once: true,
+          capture: true,
+        });
+        element.addEventListener("input", stopEvent, {
+          once: true,
+          capture: true,
+        });
+
         // Dispatch a controlled input event after a delay
         setTimeout(() => {
-          element.dispatchEvent(new Event('input', { bubbles: true }));
-          element.dispatchEvent(new Event('change', { bubbles: true }));
+          element.dispatchEvent(new Event("input", { bubbles: true }));
+          element.dispatchEvent(new Event("change", { bubbles: true }));
         }, 50);
       }
-      
+
       // Used direct value assignment
       return;
     }
-    
+
     // Method 4: Fallback to insert-text-at-cursor library
     insertTextAtCursor(element, newText);
     // Used insert-text-at-cursor library
-    
   } catch (error) {
-    console.error('Text replacement failed:', error);
+    console.error("Text replacement failed:", error);
     fallbackTextReplacement(element, newText);
   }
 }
@@ -303,29 +318,29 @@ function replaceTextForPerplexity(element, newText, useStoredRange) {
  */
 function insertTextIntoContentEditable(element, text) {
   const selection = window.getSelection();
-  
+
   if (selection.rangeCount > 0) {
     const range = selection.getRangeAt(0);
     range.deleteContents();
-    
+
     // Split text by newlines and create proper DOM structure
-    const lines = text.split('\n');
+    const lines = text.split("\n");
     const fragment = document.createDocumentFragment();
-    
+
     lines.forEach((line, index) => {
       // Add the text content
       if (line.length > 0) {
         fragment.appendChild(document.createTextNode(line));
       }
-      
+
       // Add line break (except for the last line)
       if (index < lines.length - 1) {
-        fragment.appendChild(document.createElement('br'));
+        fragment.appendChild(document.createElement("br"));
       }
     });
-    
+
     range.insertNode(fragment);
-    
+
     // Move cursor to end of inserted content
     range.collapse(false);
     selection.removeAllRanges();
@@ -339,12 +354,14 @@ function insertTextIntoContentEditable(element, text) {
  * @param {string} newText - The text to insert
  */
 function fallbackTextReplacement(element, newText) {
-  if (element.tagName.toLowerCase() === "textarea" || 
-      element.tagName.toLowerCase() === "input") {
+  if (
+    element.tagName.toLowerCase() === "textarea" ||
+    element.tagName.toLowerCase() === "input"
+  ) {
     // Handle textarea/input
     const start = element.selectionStart || 0;
     const end = element.selectionEnd || 0;
-    const text = element.value || '';
+    const text = element.value || "";
 
     element.value = text.substring(0, start) + newText + text.substring(end);
     element.selectionStart = start;
@@ -363,11 +380,11 @@ function fallbackTextReplacement(element, newText) {
       selectionRange.insertNode(document.createTextNode(newText));
     }
   }
-  
+
   // Trigger additional events for perplexity.ai
   if (isPerplexity) {
-    const events = ['input', 'change', 'blur', 'focus', 'keyup'];
-    events.forEach(eventType => {
+    const events = ["input", "change", "blur", "focus", "keyup"];
+    events.forEach((eventType) => {
       element.dispatchEvent(new Event(eventType, { bubbles: true }));
     });
   }
@@ -399,9 +416,17 @@ function showNotification(message, type) {
     top: 20px;
     right: 20px;
     padding: 12px 20px;
-    background-color: ${type === "error" ? "oklch(0.629 0.1902 23.0704)" : "oklch(0.5393 0.2713 286.7462)"};
+    background-color: ${
+      type === "error"
+        ? "oklch(0.629 0.1902 23.0704)"
+        : "oklch(0.5393 0.2713 286.7462)"
+    };
     color: oklch(1 0 0);
-    border: 1px solid ${type === "error" ? "oklch(0.629 0.1902 23.0704)" : "oklch(0.5393 0.2713 286.7462)"};
+    border: 1px solid ${
+      type === "error"
+        ? "oklch(0.629 0.1902 23.0704)"
+        : "oklch(0.5393 0.2713 286.7462)"
+    };
     border-radius: calc(1.4rem - 6px);
     box-shadow: 0px 2px 3px 0px hsl(0 0% 0% / 0.16), 0px 1px 2px -1px hsl(0 0% 0% / 0.16);
     z-index: 10000;
@@ -411,9 +436,9 @@ function showNotification(message, type) {
     letter-spacing: -0.025em;
     animation: prompter-notification-enter 0.2s ease-out;
   `;
-  
+
   document.body.appendChild(notification);
-  
+
   setTimeout(() => {
     notification.remove();
   }, 3000);
@@ -434,14 +459,21 @@ let modalTargetElement = null;
 function handleKeyboardModal(message) {
   // Check if there's an error message
   if (message.error) {
-    showNotification(message.error, "error");
+    if (message.error.includes("authenticated")) {
+      showNotification(
+        "Please sign in to use templates. Open the extension popup to authenticate.",
+        "error"
+      );
+    } else {
+      showNotification(message.error, "error");
+    }
     return;
   }
 
   // Validate text selection
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
-  
+
   if (!selectedText || selectedText.length === 0) {
     showNotification("Please select text first", "error");
     return;
@@ -475,8 +507,8 @@ function showKeyboardModal() {
   }
 
   // Create modal structure
-  keyboardModal = document.createElement('div');
-  keyboardModal.className = 'prompter-modal-overlay';
+  keyboardModal = document.createElement("div");
+  keyboardModal.className = "prompter-modal-overlay";
   keyboardModal.innerHTML = `
     <div class="prompter-modal">
       <div class="prompter-header">
@@ -505,7 +537,7 @@ function showKeyboardModal() {
   document.body.appendChild(keyboardModal);
 
   // Focus search input
-  const searchInput = keyboardModal.querySelector('.prompter-search');
+  const searchInput = keyboardModal.querySelector(".prompter-search");
   if (searchInput) {
     searchInput.focus();
   }
@@ -519,32 +551,43 @@ function renderTemplateList() {
     return '<div class="prompter-empty">No templates found</div>';
   }
 
-  return filteredTemplates.map((template, index) => {
-    const templateType = template.templateType || template.template_type || 'json';
-    const typeClass = `prompter-type-badge prompter-type-${templateType}`;
-    return `
-      <div class="prompter-template-item ${index === currentSelectedIndex ? 'selected' : ''}" data-index="${index}">
+  return filteredTemplates
+    .map((template, index) => {
+      const templateType =
+        template.templateType || template.template_type || "json";
+      const typeClass = `prompter-type-badge prompter-type-${templateType}`;
+      return `
+      <div class="prompter-template-item ${
+        index === currentSelectedIndex ? "selected" : ""
+      }" data-index="${index}">
         <div class="prompter-template-header">
           <div class="prompter-template-name">${escapeHtml(template.name)}</div>
           <span class="${typeClass}">${templateType.toUpperCase()}</span>
         </div>
-        ${template.description ? `<div class="prompter-template-description">${escapeHtml(template.description)}</div>` : ''}
+        ${
+          template.description
+            ? `<div class="prompter-template-description">${escapeHtml(
+                template.description
+              )}</div>`
+            : ""
+        }
         <div class="prompter-template-number">${index + 1}</div>
       </div>
     `;
-  }).join('');
+    })
+    .join("");
 }
 
 /**
  * Add modal styles to the page using Tailwind-based design system
  */
 function addModalStyles() {
-  if (document.getElementById('prompter-modal-styles')) {
+  if (document.getElementById("prompter-modal-styles")) {
     return; // Styles already added
   }
 
-  const style = document.createElement('style');
-  style.id = 'prompter-modal-styles';
+  const style = document.createElement("style");
+  style.id = "prompter-modal-styles";
   style.textContent = `
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&display=swap');
     
@@ -742,7 +785,7 @@ function addModalStyles() {
       display: block;
     }
   `;
-  
+
   document.head.appendChild(style);
 }
 
@@ -752,25 +795,27 @@ function addModalStyles() {
 function addModalEventListeners() {
   if (!keyboardModal) return;
 
-  const searchInput = keyboardModal.querySelector('.prompter-search');
-  
+  const searchInput = keyboardModal.querySelector(".prompter-search");
+
   // Search input events
   if (searchInput) {
-    searchInput.addEventListener('input', handleSearch);
-    searchInput.addEventListener('keydown', handleSearchKeydown);
+    searchInput.addEventListener("input", handleSearch);
+    searchInput.addEventListener("keydown", handleSearchKeydown);
   }
 
   // Click outside to close
-  keyboardModal.addEventListener('click', (e) => {
+  keyboardModal.addEventListener("click", (e) => {
     if (e.target === keyboardModal) {
       closeKeyboardModal();
     }
   });
 
   // Template item clicks
-  const templateItems = keyboardModal.querySelectorAll('.prompter-template-item');
+  const templateItems = keyboardModal.querySelectorAll(
+    ".prompter-template-item"
+  );
   templateItems.forEach((item, index) => {
-    item.addEventListener('click', () => {
+    item.addEventListener("click", () => {
       selectTemplate(index);
     });
   });
@@ -781,16 +826,18 @@ function addModalEventListeners() {
  */
 function handleSearch(e) {
   const query = e.target.value.toLowerCase().trim();
-  
-  if (query === '') {
+
+  if (query === "") {
     filteredTemplates = [...allTemplates];
   } else {
-    filteredTemplates = allTemplates.filter(template => 
-      template.name.toLowerCase().includes(query) ||
-      (template.description && template.description.toLowerCase().includes(query))
+    filteredTemplates = allTemplates.filter(
+      (template) =>
+        template.name.toLowerCase().includes(query) ||
+        (template.description &&
+          template.description.toLowerCase().includes(query))
     );
   }
-  
+
   currentSelectedIndex = 0;
   updateTemplateList();
 }
@@ -800,25 +847,25 @@ function handleSearch(e) {
  */
 function handleSearchKeydown(e) {
   switch (e.key) {
-    case 'ArrowDown':
+    case "ArrowDown":
       e.preventDefault();
       moveSelection(1);
       break;
-    case 'ArrowUp':
+    case "ArrowUp":
       e.preventDefault();
       moveSelection(-1);
       break;
-    case 'Enter':
+    case "Enter":
       e.preventDefault();
       selectTemplate(currentSelectedIndex);
       break;
-    case 'Escape':
+    case "Escape":
       e.preventDefault();
       closeKeyboardModal();
       break;
     default:
       // Handle number keys (1-9)
-      if (e.key >= '1' && e.key <= '9') {
+      if (e.key >= "1" && e.key <= "9") {
         e.preventDefault();
         const index = parseInt(e.key) - 1;
         if (index < filteredTemplates.length) {
@@ -834,15 +881,17 @@ function handleSearchKeydown(e) {
  */
 function moveSelection(direction) {
   const newIndex = currentSelectedIndex + direction;
-  
+
   if (newIndex >= 0 && newIndex < filteredTemplates.length) {
     currentSelectedIndex = newIndex;
     updateTemplateList();
-    
+
     // Scroll selected item into view
-    const selectedItem = keyboardModal.querySelector('.prompter-template-item.selected');
+    const selectedItem = keyboardModal.querySelector(
+      ".prompter-template-item.selected"
+    );
     if (selectedItem) {
-      selectedItem.scrollIntoView({ block: 'nearest' });
+      selectedItem.scrollIntoView({ block: "nearest" });
     }
   }
 }
@@ -851,14 +900,16 @@ function moveSelection(direction) {
  * Update the template list display
  */
 function updateTemplateList() {
-  const templateList = keyboardModal.querySelector('.prompter-template-list');
+  const templateList = keyboardModal.querySelector(".prompter-template-list");
   if (templateList) {
     templateList.innerHTML = renderTemplateList();
-    
+
     // Re-add click listeners
-    const templateItems = templateList.querySelectorAll('.prompter-template-item');
+    const templateItems = templateList.querySelectorAll(
+      ".prompter-template-item"
+    );
     templateItems.forEach((item, index) => {
-      item.addEventListener('click', () => {
+      item.addEventListener("click", () => {
         selectTemplate(index);
       });
     });
@@ -874,60 +925,64 @@ function selectTemplate(index) {
   }
 
   const selectedTemplate = filteredTemplates[index];
-  
+
   // Show loading state
   showLoadingState();
 
   // Send message to background script to format text
-  chrome.runtime.sendMessage({
-    action: "formatWithTemplate",
-    templateId: selectedTemplate.id,
-    selectedText: modalSelectedText
-  }, (response) => {
-    if (chrome.runtime.lastError) {
-      const errorMessage = chrome.runtime.lastError.message || "Unknown runtime error";
-      console.error("Chrome runtime error:", errorMessage);
-      console.error("Full error object:", chrome.runtime.lastError);
-      showNotification(`Communication error: ${errorMessage}`, "error");
-      closeKeyboardModal();
-      return;
-    }
-
-    if (!response) {
-      console.error("No response received from background script");
-      showNotification("No response from extension background", "error");
-      closeKeyboardModal();
-      return;
-    }
-
-    if (response.error) {
-      console.error("Background script error:", response.error);
-      showNotification(response.error, "error");
-      closeKeyboardModal();
-      return;
-    }
-
-    // Replace the selected text with formatted result
-    if (response.formattedText && modalTargetElement) {
-      try {
-        // Focus the target element
-        modalTargetElement.focus();
-        
-        // Replace the text using existing function
-        replaceSelectedTextWithFormatted(response.formattedText);
-        
-        showNotification("Text formatted successfully!", "info");
-      } catch (error) {
-        console.error("Error during text replacement:", error);
-        showNotification("Failed to replace text", "error");
+  chrome.runtime.sendMessage(
+    {
+      action: "formatWithTemplate",
+      templateId: selectedTemplate.id,
+      selectedText: modalSelectedText,
+    },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        const errorMessage =
+          chrome.runtime.lastError.message || "Unknown runtime error";
+        console.error("Chrome runtime error:", errorMessage);
+        console.error("Full error object:", chrome.runtime.lastError);
+        showNotification(`Communication error: ${errorMessage}`, "error");
+        closeKeyboardModal();
+        return;
       }
-    } else {
-      console.warn("No formatted text received or no target element");
-      showNotification("No formatted text received", "error");
-    }
 
-    closeKeyboardModal();
-  });
+      if (!response) {
+        console.error("No response received from background script");
+        showNotification("No response from extension background", "error");
+        closeKeyboardModal();
+        return;
+      }
+
+      if (response.error) {
+        console.error("Background script error:", response.error);
+        showNotification(response.error, "error");
+        closeKeyboardModal();
+        return;
+      }
+
+      // Replace the selected text with formatted result
+      if (response.formattedText && modalTargetElement) {
+        try {
+          // Focus the target element
+          modalTargetElement.focus();
+
+          // Replace the text using existing function
+          replaceSelectedTextWithFormatted(response.formattedText);
+
+          showNotification("Text formatted successfully!", "info");
+        } catch (error) {
+          console.error("Error during text replacement:", error);
+          showNotification("Failed to replace text", "error");
+        }
+      } else {
+        console.warn("No formatted text received or no target element");
+        showNotification("No formatted text received", "error");
+      }
+
+      closeKeyboardModal();
+    }
+  );
 }
 
 /**
@@ -935,13 +990,17 @@ function selectTemplate(index) {
  */
 function replaceSelectedTextWithFormatted(newText) {
   if (!modalTargetElement) {
-    console.error('No target element for text replacement');
+    console.error("No target element for text replacement");
     return;
   }
 
-  console.log('Replacing text in element:', modalTargetElement.tagName, modalTargetElement.contentEditable);
-  console.log('Selected text to replace:', modalSelectedText);
-  console.log('New formatted text:', newText);
+  console.log(
+    "Replacing text in element:",
+    modalTargetElement.tagName,
+    modalTargetElement.contentEditable
+  );
+  console.log("Selected text to replace:", modalSelectedText);
+  console.log("New formatted text:", newText);
 
   try {
     // Focus the element first
@@ -958,60 +1017,60 @@ function replaceSelectedTextWithFormatted(newText) {
       replaceTextForGemini(modalTargetElement, newText);
     } else {
       // Generic handling for other sites
-      if (modalTargetElement.tagName.toLowerCase() === 'textarea' || 
-          modalTargetElement.tagName.toLowerCase() === 'input') {
-        
+      if (
+        modalTargetElement.tagName.toLowerCase() === "textarea" ||
+        modalTargetElement.tagName.toLowerCase() === "input"
+      ) {
         // For textarea and input elements
         replaceTextInInputElement(modalTargetElement, newText);
-        
-      } else if (modalTargetElement.contentEditable === 'true') {
-        
+      } else if (modalTargetElement.contentEditable === "true") {
         // For contenteditable elements
         replaceTextInContentEditable(modalTargetElement, newText);
-        
       } else {
-        
         // Fallback for other elements
-        console.warn('Unexpected element type, using fallback');
+        console.warn("Unexpected element type, using fallback");
         fallbackTextReplacement(modalTargetElement, newText);
       }
     }
 
     // Trigger events to notify the page of changes
-    const events = ['input', 'change', 'keyup', 'paste'];
-    events.forEach(eventType => {
+    const events = ["input", "change", "keyup", "paste"];
+    events.forEach((eventType) => {
       modalTargetElement.dispatchEvent(new Event(eventType, { bubbles: true }));
     });
 
     // Additional React-compatible events
     if (isChatGPT || isClaude || isGemini) {
       // Trigger React synthetic events
-      const inputEvent = new InputEvent('input', {
+      const inputEvent = new InputEvent("input", {
         bubbles: true,
         cancelable: true,
-        inputType: 'insertText',
-        data: newText
+        inputType: "insertText",
+        data: newText,
       });
       modalTargetElement.dispatchEvent(inputEvent);
-      
+
       // Trigger composition events for better compatibility
-      modalTargetElement.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
-      modalTargetElement.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: newText }));
+      modalTargetElement.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true })
+      );
+      modalTargetElement.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true, data: newText })
+      );
     }
 
     // Special handling for React components
     if (modalTargetElement._valueTracker) {
-      modalTargetElement._valueTracker.setValue('');
+      modalTargetElement._valueTracker.setValue("");
     }
-    
+
     // Force React re-render by triggering additional events
     setTimeout(() => {
-      modalTargetElement.dispatchEvent(new Event('blur', { bubbles: true }));
-      modalTargetElement.dispatchEvent(new Event('focus', { bubbles: true }));
+      modalTargetElement.dispatchEvent(new Event("blur", { bubbles: true }));
+      modalTargetElement.dispatchEvent(new Event("focus", { bubbles: true }));
     }, 10);
-
   } catch (error) {
-    console.error('Error replacing text from modal:', error);
+    console.error("Error replacing text from modal:", error);
     fallbackTextReplacement(modalTargetElement, newText);
   }
 }
@@ -1020,26 +1079,30 @@ function replaceSelectedTextWithFormatted(newText) {
  * Replace text in input/textarea elements
  */
 function replaceTextInInputElement(element, newText) {
-  console.log('Replacing text in input element');
-  
+  console.log("Replacing text in input element");
+
   // Get current value and find the selected text
-  const currentValue = element.value || '';
+  const currentValue = element.value || "";
   const selectedTextIndex = currentValue.indexOf(modalSelectedText);
-  
+
   if (selectedTextIndex !== -1) {
     // Replace the specific selected text
     const beforeText = currentValue.substring(0, selectedTextIndex);
-    const afterText = currentValue.substring(selectedTextIndex + modalSelectedText.length);
+    const afterText = currentValue.substring(
+      selectedTextIndex + modalSelectedText.length
+    );
     element.value = beforeText + newText + afterText;
-    
+
     // Set cursor position after the new text
     const newCursorPosition = selectedTextIndex + newText.length;
     element.setSelectionRange(newCursorPosition, newCursorPosition);
-    
-    console.log('Text replaced in input element');
+
+    console.log("Text replaced in input element");
   } else {
     // Fallback: replace all content if we can't find the selected text
-    console.warn('Could not find selected text in input, replacing all content');
+    console.warn(
+      "Could not find selected text in input, replacing all content"
+    );
     element.value = newText;
     element.setSelectionRange(newText.length, newText.length);
   }
@@ -1049,8 +1112,8 @@ function replaceTextInInputElement(element, newText) {
  * Replace text in contenteditable elements
  */
 function replaceTextInContentEditable(element, newText) {
-  console.log('Replacing text in contenteditable element');
-  
+  console.log("Replacing text in contenteditable element");
+
   // Try to select the original text first
   if (selectTextInContentEditable(element, modalSelectedText)) {
     // If we successfully selected the text, replace it
@@ -1058,31 +1121,33 @@ function replaceTextInContentEditable(element, newText) {
     if (selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
       range.deleteContents();
-      
+
       // Insert new text with proper line breaks
-      const lines = newText.split('\n');
+      const lines = newText.split("\n");
       const fragment = document.createDocumentFragment();
-      
+
       lines.forEach((line, index) => {
         if (line.length > 0) {
           fragment.appendChild(document.createTextNode(line));
         }
         if (index < lines.length - 1) {
-          fragment.appendChild(document.createElement('br'));
+          fragment.appendChild(document.createElement("br"));
         }
       });
-      
+
       range.insertNode(fragment);
       range.collapse(false);
       selection.removeAllRanges();
       selection.addRange(range);
-      
-      console.log('Text replaced in contenteditable element');
+
+      console.log("Text replaced in contenteditable element");
     }
   } else {
     // Fallback: replace all content
-    console.warn('Could not find selected text in contenteditable, replacing all content');
-    element.innerHTML = '';
+    console.warn(
+      "Could not find selected text in contenteditable, replacing all content"
+    );
+    element.innerHTML = "";
     element.textContent = newText;
   }
 }
@@ -1093,7 +1158,7 @@ function replaceTextInContentEditable(element, newText) {
 function selectTextInContentEditable(element, textToSelect) {
   const selection = window.getSelection();
   const range = document.createRange();
-  
+
   // Walk through all text nodes to find the matching text
   const walker = document.createTreeWalker(
     element,
@@ -1102,44 +1167,50 @@ function selectTextInContentEditable(element, textToSelect) {
     false
   );
 
-  let textContent = '';
+  let textContent = "";
   let textNodes = [];
   let node;
-  
-  while (node = walker.nextNode()) {
+
+  while ((node = walker.nextNode())) {
     textNodes.push({
       node: node,
       startOffset: textContent.length,
-      endOffset: textContent.length + node.textContent.length
+      endOffset: textContent.length + node.textContent.length,
     });
     textContent += node.textContent;
   }
-  
+
   const textIndex = textContent.indexOf(textToSelect);
   if (textIndex === -1) {
     return false;
   }
-  
+
   // Find which text nodes contain our target text
   const startIndex = textIndex;
   const endIndex = textIndex + textToSelect.length;
-  
-  let startNode = null, startOffset = 0;
-  let endNode = null, endOffset = 0;
-  
+
+  let startNode = null,
+    startOffset = 0;
+  let endNode = null,
+    endOffset = 0;
+
   for (const nodeInfo of textNodes) {
-    if (startNode === null && startIndex >= nodeInfo.startOffset && startIndex <= nodeInfo.endOffset) {
+    if (
+      startNode === null &&
+      startIndex >= nodeInfo.startOffset &&
+      startIndex <= nodeInfo.endOffset
+    ) {
       startNode = nodeInfo.node;
       startOffset = startIndex - nodeInfo.startOffset;
     }
-    
+
     if (endIndex >= nodeInfo.startOffset && endIndex <= nodeInfo.endOffset) {
       endNode = nodeInfo.node;
       endOffset = endIndex - nodeInfo.startOffset;
       break;
     }
   }
-  
+
   if (startNode && endNode) {
     try {
       range.setStart(startNode, startOffset);
@@ -1148,11 +1219,11 @@ function selectTextInContentEditable(element, textToSelect) {
       selection.addRange(range);
       return true;
     } catch (error) {
-      console.error('Error selecting text in contenteditable:', error);
+      console.error("Error selecting text in contenteditable:", error);
       return false;
     }
   }
-  
+
   return false;
 }
 
@@ -1160,9 +1231,9 @@ function selectTextInContentEditable(element, textToSelect) {
  * Site-specific text replacement for ChatGPT
  */
 function replaceTextForChatGPT(element, newText) {
-  console.log('Using ChatGPT-specific text replacement');
-  
-  if (element.contentEditable === 'true') {
+  console.log("Using ChatGPT-specific text replacement");
+
+  if (element.contentEditable === "true") {
     // ChatGPT uses contenteditable divs
     try {
       // Method 1: Try to use execCommand for better React compatibility
@@ -1173,21 +1244,21 @@ function replaceTextForChatGPT(element, newText) {
         range.selectNodeContents(element);
         selection.removeAllRanges();
         selection.addRange(range);
-        
+
         // Use execCommand to replace
-        document.execCommand('insertText', false, newText);
-        
-        console.log('ChatGPT text replaced using execCommand');
+        document.execCommand("insertText", false, newText);
+
+        console.log("ChatGPT text replaced using execCommand");
         return;
       }
     } catch (error) {
-      console.warn('execCommand failed, trying direct replacement');
+      console.warn("execCommand failed, trying direct replacement");
     }
-    
+
     // Method 2: Direct content replacement
-    element.innerHTML = '';
+    element.innerHTML = "";
     element.textContent = newText;
-    
+
     // Set cursor at end
     const range = document.createRange();
     const selection = window.getSelection();
@@ -1195,7 +1266,6 @@ function replaceTextForChatGPT(element, newText) {
     range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
-    
   } else {
     // Fallback for other element types
     replaceTextInInputElement(element, newText);
@@ -1206,33 +1276,33 @@ function replaceTextForChatGPT(element, newText) {
  * Site-specific text replacement for Claude.ai
  */
 function replaceTextForClaude(element, newText) {
-  console.log('Using Claude-specific text replacement');
-  
-  if (element.contentEditable === 'true') {
+  console.log("Using Claude-specific text replacement");
+
+  if (element.contentEditable === "true") {
     // Claude.ai uses contenteditable with specific structure
     try {
       // Clear the element content
-      element.innerHTML = '';
-      
+      element.innerHTML = "";
+
       // Add the new text, preserving line breaks
-      const lines = newText.split('\n');
+      const lines = newText.split("\n");
       const fragment = document.createDocumentFragment();
-      
+
       lines.forEach((line, index) => {
         if (line.length > 0) {
-          const div = document.createElement('div');
+          const div = document.createElement("div");
           div.textContent = line;
           fragment.appendChild(div);
         } else {
           // Empty line
-          const div = document.createElement('div');
-          div.innerHTML = '<br>';
+          const div = document.createElement("div");
+          div.innerHTML = "<br>";
           fragment.appendChild(div);
         }
       });
-      
+
       element.appendChild(fragment);
-      
+
       // Set cursor at end
       const range = document.createRange();
       const selection = window.getSelection();
@@ -1240,10 +1310,10 @@ function replaceTextForClaude(element, newText) {
       range.collapse(false);
       selection.removeAllRanges();
       selection.addRange(range);
-      
-      console.log('Claude text replaced successfully');
+
+      console.log("Claude text replaced successfully");
     } catch (error) {
-      console.error('Claude-specific replacement failed:', error);
+      console.error("Claude-specific replacement failed:", error);
       replaceTextInContentEditable(element, newText);
     }
   } else {
@@ -1255,19 +1325,19 @@ function replaceTextForClaude(element, newText) {
  * Site-specific text replacement for Gemini
  */
 function replaceTextForGemini(element, newText) {
-  console.log('Using Gemini-specific text replacement');
-  
-  if (element.contentEditable === 'true') {
+  console.log("Using Gemini-specific text replacement");
+
+  if (element.contentEditable === "true") {
     // Gemini uses contenteditable elements
     try {
       // Select all content and replace
       element.focus();
-      document.execCommand('selectAll', false, null);
-      document.execCommand('insertText', false, newText);
-      
-      console.log('Gemini text replaced using execCommand');
+      document.execCommand("selectAll", false, null);
+      document.execCommand("insertText", false, newText);
+
+      console.log("Gemini text replaced using execCommand");
     } catch (error) {
-      console.warn('Gemini execCommand failed, using fallback');
+      console.warn("Gemini execCommand failed, using fallback");
       replaceTextInContentEditable(element, newText);
     }
   } else {
@@ -1280,10 +1350,11 @@ function replaceTextForGemini(element, newText) {
  */
 function showLoadingState() {
   if (!keyboardModal) return;
-  
-  const templateList = keyboardModal.querySelector('.prompter-template-list');
+
+  const templateList = keyboardModal.querySelector(".prompter-template-list");
   if (templateList) {
-    templateList.innerHTML = '<div class="prompter-empty">Formatting text...</div>';
+    templateList.innerHTML =
+      '<div class="prompter-empty">Formatting text...</div>';
   }
 }
 
@@ -1293,9 +1364,9 @@ function showLoadingState() {
 function positionModal() {
   // For now, center the modal. Later we can add smart positioning near selected text
   if (keyboardModal) {
-    keyboardModal.style.display = 'flex';
-    keyboardModal.style.alignItems = 'center';
-    keyboardModal.style.justifyContent = 'center';
+    keyboardModal.style.display = "flex";
+    keyboardModal.style.alignItems = "center";
+    keyboardModal.style.justifyContent = "center";
   }
 }
 
@@ -1307,7 +1378,7 @@ function closeKeyboardModal() {
     keyboardModal.remove();
     keyboardModal = null;
   }
-  
+
   // Reset state
   currentSelectedIndex = 0;
   filteredTemplates = [];
@@ -1320,7 +1391,7 @@ function closeKeyboardModal() {
  * Escape HTML to prevent XSS
  */
 function escapeHtml(text) {
-  const div = document.createElement('div');
+  const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }

@@ -1,4 +1,4 @@
-import { supabase } from './supabase.js';
+import { supabase } from "./supabase.js";
 
 document.addEventListener("DOMContentLoaded", async function () {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   async function handleAuthSuccess(sessionData) {
     try {
-      console.log('🔐 Popup: Handling auth success...');
+      console.log("🔐 Popup: Handling auth success...");
       // Create proper Supabase session - storage adapter will automatically persist it
       const { error } = await supabase.auth.setSession({
         access_token: sessionData.access_token,
@@ -20,7 +20,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 
       if (error) throw error;
 
-      console.log('✅ Popup: Session set successfully');
+      console.log("✅ Popup: Session set successfully");
       // Auth state change listener will automatically show home page
     } catch (error) {
       console.error("❌ Popup: Error handling auth success:", error);
@@ -43,41 +43,80 @@ document.addEventListener("DOMContentLoaded", async function () {
   );
 
   // Check for existing session using Supabase's automatic session management
-  console.log('🔍 Checking for existing session...');
+  console.log("🔍 Checking for existing session...");
   try {
-    const { data: { session }, error } = await supabase.auth.getSession();
-    
-    console.log('📋 Session check result:', {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
+
+    console.log("📋 Session check result:", {
       hasSession: !!session,
       hasError: !!error,
-      userEmail: session?.user?.email || 'no user'
+      userEmail: session?.user?.email || "no user",
     });
-    
+
     if (error) {
-      console.error('❌ Session error:', error);
+      console.error("❌ Session error:", error);
       showLoginPage();
     } else if (session && session.user) {
-      console.log('✅ Valid session found, showing home page');
+      console.log("✅ Valid session found, showing home page");
       showHomePage();
     } else {
-      console.log('⚠️ No session found, showing login page');
+      console.log("⚠️ No session found, showing login page");
       showLoginPage();
     }
   } catch (error) {
-    console.error('❌ Error checking session:', error);
+    console.error("❌ Error checking session:", error);
     showLoginPage();
   }
 
   // Listen for Supabase auth state changes
   supabase.auth.onAuthStateChange((event, session) => {
-    console.log('🔔 Popup: Auth state changed:', event, session?.user?.email || 'no user');
-    
-    if (event === 'SIGNED_IN' && session) {
-      console.log('✅ Popup: User signed in, showing home page');
+    console.log(
+      "🔔 Popup: Auth state changed:",
+      event,
+      session?.user?.email || "no user"
+    );
+
+    if (event === "SIGNED_IN" && session) {
+      console.log("✅ Popup: User signed in, showing home page");
       showHomePage();
-    } else if (event === 'SIGNED_OUT') {
-      console.log('👋 Popup: User signed out, showing login page');
+
+      // Notify background script of auth state change
+      chrome.runtime
+        .sendMessage({
+          type: "AUTH_STATE_CHANGED",
+          event: event,
+          session: {
+            access_token: session.access_token,
+            refresh_token: session.refresh_token,
+            user: session.user,
+          },
+        })
+        .catch((error) => {
+          console.log(
+            "Background script not ready for auth notification:",
+            error
+          );
+        });
+    } else if (event === "SIGNED_OUT") {
+      console.log("👋 Popup: User signed out, showing login page");
       showLoginPage();
+
+      // Notify background script of sign out
+      chrome.runtime
+        .sendMessage({
+          type: "AUTH_STATE_CHANGED",
+          event: event,
+          session: null,
+        })
+        .catch((error) => {
+          console.log(
+            "Background script not ready for auth notification:",
+            error
+          );
+        });
     }
   });
 
@@ -88,19 +127,19 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Sign out button
   const signOutButton = document.getElementById("sign-out-btn");
   if (signOutButton) {
-    signOutButton.addEventListener("click", async function() {
+    signOutButton.addEventListener("click", async function () {
       try {
         const { error } = await supabase.auth.signOut();
         if (error) throw error;
-        
+
         // Clear stored session
-        await chrome.storage.local.remove(['session']);
-        
+        await chrome.storage.local.remove(["session"]);
+
         // Show login page
         showLoginPage();
       } catch (error) {
-        console.error('Sign out error:', error);
-        showError('Failed to sign out');
+        console.error("Sign out error:", error);
+        showError("Failed to sign out");
       }
     });
   }
@@ -113,67 +152,74 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   async function loginWithGoogle() {
     try {
-      console.log('Starting Google OAuth...');
+      console.log("Starting Google OAuth...");
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: chrome.identity.getRedirectURL(),
         },
       });
-      
+
       if (error) {
-        console.error('OAuth error:', error);
+        console.error("OAuth error:", error);
         throw error;
       }
 
-      console.log('Opening OAuth URL:', data.url);
+      console.log("Opening OAuth URL:", data.url);
       await chrome.tabs.create({ url: data.url });
     } catch (error) {
-      console.error('Login error:', error);
-      showError('Login failed: ' + error.message);
+      console.error("Login error:", error);
+      showError("Login failed: " + error.message);
     }
   }
 
   async function loadDashboard() {
     try {
       // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
       if (userError) throw userError;
 
       // Update user info in header
-      document.getElementById("user-name").textContent = user.user_metadata?.full_name || "User";
+      document.getElementById("user-name").textContent =
+        user.user_metadata?.full_name || "User";
       document.getElementById("user-email").textContent = user.email;
       if (user.user_metadata?.avatar_url) {
-        document.getElementById("user-avatar").src = user.user_metadata.avatar_url;
+        document.getElementById("user-avatar").src =
+          user.user_metadata.avatar_url;
       }
 
       // Fetch user stats from the view
       const { data: stats, error: statsError } = await supabase
-        .from('user_dashboard_stats')
-        .select('*')
-        .eq('user_id', user.id)
+        .from("user_dashboard_stats")
+        .select("*")
+        .eq("user_id", user.id)
         .single();
 
       if (statsError) {
-        console.error('Error fetching stats:', statsError);
+        console.error("Error fetching stats:", statsError);
         // Set default values if error
         document.getElementById("total-requests").textContent = "0";
         document.getElementById("total-templates").textContent = "0";
       } else {
         // Update stats
-        document.getElementById("total-requests").textContent = stats.total_formatting_requests || "0";
-        document.getElementById("total-templates").textContent = stats.total_templates || "0";
+        document.getElementById("total-requests").textContent =
+          stats.total_formatting_requests || "0";
+        document.getElementById("total-templates").textContent =
+          stats.total_templates || "0";
       }
 
       // Fetch user's templates
       const { data: templates, error: templatesError } = await supabase
-        .from('templates')
-        .select('*')
-        .eq('created_by', user.id)
-        .order('created_at', { ascending: false });
+        .from("templates")
+        .select("*")
+        .eq("created_by", user.id)
+        .order("created_at", { ascending: false });
 
       if (templatesError) {
-        console.error('Error fetching templates:', templatesError);
+        console.error("Error fetching templates:", templatesError);
         displayTemplates([]);
       } else {
         displayTemplates(templates || []);
@@ -181,7 +227,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 
       // Load formatting history
       await loadHistory();
-
     } catch (error) {
       console.error("Error loading dashboard:", error);
       showError("Failed to load dashboard");
@@ -191,26 +236,36 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Display templates in the list
   function displayTemplates(templates) {
     const templatesList = document.getElementById("templates-list");
-    
+
     if (templates.length === 0) {
-      templatesList.innerHTML = '<p class="text-center text-muted-foreground text-sm py-5 m-0">No templates yet. Create your first template!</p>';
+      templatesList.innerHTML =
+        '<p class="text-center text-muted-foreground text-sm py-5 m-0">No templates yet. Create your first template!</p>';
       return;
     }
 
     // Build HTML for templates
-    const templatesHTML = templates.map(template => {
-      const templateType = template.templateType || template.template_type || 'json';
-      const badgeClass = `template-type-badge template-type-${templateType}`;
-      return `
-        <div class="bg-background border border-border rounded-md p-3 mb-[10px] cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-template-id="${template.id}">
+    const templatesHTML = templates
+      .map((template) => {
+        const templateType =
+          template.templateType || template.template_type || "json";
+        const badgeClass = `template-type-badge template-type-${templateType}`;
+        return `
+        <div class="bg-background border border-border rounded-md p-3 mb-[10px] cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-template-id="${
+          template.id
+        }">
           <div class="flex items-center justify-between mb-1">
             <div class="font-medium text-foreground">${template.name}</div>
             <span class="${badgeClass}">${templateType.toUpperCase()}</span>
           </div>
-          ${template.description ? `<div class="text-xs text-muted-foreground">${template.description}</div>` : ''}
+          ${
+            template.description
+              ? `<div class="text-xs text-muted-foreground">${template.description}</div>`
+              : ""
+          }
         </div>
       `;
-    }).join('');
+      })
+      .join("");
 
     templatesList.innerHTML = templatesHTML;
   }
@@ -219,7 +274,10 @@ document.addEventListener("DOMContentLoaded", async function () {
   async function loadHistory() {
     try {
       // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
       if (userError || !user) {
         console.log("No user found, skipping history load");
         displayHistory([]);
@@ -230,7 +288,7 @@ document.addEventListener("DOMContentLoaded", async function () {
       const historyKey = `formatting_history_${user.id}`;
       const result = await chrome.storage.local.get([historyKey]);
       const history = result[historyKey] || [];
-      
+
       displayHistory(history);
     } catch (error) {
       console.error("Error loading history:", error);
@@ -241,20 +299,23 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Display history items in the list
   function displayHistory(history) {
     const historyList = document.getElementById("history-list");
-    
+
     if (history.length === 0) {
-      historyList.innerHTML = '<p class="text-center text-muted-foreground text-sm py-5 m-0">No formatting history yet</p>';
+      historyList.innerHTML =
+        '<p class="text-center text-muted-foreground text-sm py-5 m-0">No formatting history yet</p>';
       return;
     }
 
     // Build HTML for history items
-    const historyHTML = history.map(item => {
-      const timeAgo = getTimeAgo(item.timestamp);
-      const preview = item.inputText.length > 100 
-        ? item.inputText.substring(0, 100) + "..." 
-        : item.inputText;
-      
-      return `
+    const historyHTML = history
+      .map((item) => {
+        const timeAgo = getTimeAgo(item.timestamp);
+        const preview =
+          item.inputText.length > 100
+            ? item.inputText.substring(0, 100) + "..."
+            : item.inputText;
+
+        return `
         <div class="bg-background border border-border rounded-md mb-[10px] overflow-hidden transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-history-id="${item.id}">
           <div class="flex items-center justify-between p-3 cursor-pointer hover:bg-muted transition-colors duration-200" data-toggle-id="${item.id}">
             <div class="flex-1 min-w-0">
@@ -282,27 +343,30 @@ document.addEventListener("DOMContentLoaded", async function () {
           </div>
         </div>
       `;
-    }).join('');
+      })
+      .join("");
 
     historyList.innerHTML = historyHTML;
 
     // Add event listeners for toggle functionality
-    const toggleButtons = historyList.querySelectorAll('[data-toggle-id]');
-    toggleButtons.forEach(button => {
-      button.addEventListener('click', (e) => {
-        const itemId = button.getAttribute('data-toggle-id');
+    const toggleButtons = historyList.querySelectorAll("[data-toggle-id]");
+    toggleButtons.forEach((button) => {
+      button.addEventListener("click", (e) => {
+        const itemId = button.getAttribute("data-toggle-id");
         toggleHistoryItem(itemId);
       });
     });
 
     // Add event listeners for copy buttons
-    const copyButtons = historyList.querySelectorAll('.copy-btn[data-copy-id]');
-    copyButtons.forEach(button => {
-      button.addEventListener('click', (e) => {
+    const copyButtons = historyList.querySelectorAll(".copy-btn[data-copy-id]");
+    copyButtons.forEach((button) => {
+      button.addEventListener("click", (e) => {
         e.stopPropagation(); // Prevent triggering toggle
-        const itemId = button.getAttribute('data-copy-id');
+        const itemId = button.getAttribute("data-copy-id");
         // Find the corresponding history item and get the actual output text
-        const historyItem = history.find(item => item.id.toString() === itemId);
+        const historyItem = history.find(
+          (item) => item.id.toString() === itemId
+        );
         if (historyItem) {
           copyToClipboard(itemId, historyItem.outputText);
         }
@@ -313,17 +377,17 @@ document.addEventListener("DOMContentLoaded", async function () {
   // Toggle history item expansion
   function toggleHistoryItem(itemId) {
     const item = document.querySelector(`[data-history-id="${itemId}"]`);
-    const content = item.querySelector('.hidden, .block');
-    const toggle = item.querySelector('.text-xs.ml-2');
-    
-    if (content.classList.contains('hidden')) {
-      content.classList.remove('hidden');
-      content.classList.add('block');
-      toggle.textContent = '▲';
+    const content = item.querySelector(".hidden, .block");
+    const toggle = item.querySelector(".text-xs.ml-2");
+
+    if (content.classList.contains("hidden")) {
+      content.classList.remove("hidden");
+      content.classList.add("block");
+      toggle.textContent = "▲";
     } else {
-      content.classList.remove('block');
-      content.classList.add('hidden');
-      toggle.textContent = '▼';
+      content.classList.remove("block");
+      content.classList.add("hidden");
+      toggle.textContent = "▼";
     }
   }
 
@@ -332,25 +396,24 @@ document.addEventListener("DOMContentLoaded", async function () {
     try {
       // Copy the original text without any escaping since we're getting it directly from the data
       await navigator.clipboard.writeText(text);
-      
+
       // Show feedback
       const copyBtn = document.querySelector(`[data-copy-id="${itemId}"]`);
       const originalText = copyBtn.textContent;
-      copyBtn.textContent = 'Copied!';
-      copyBtn.classList.remove('bg-primary', 'hover:bg-primary/90');
-      copyBtn.classList.add('bg-green-500', 'hover:bg-green-600');
-      
+      copyBtn.textContent = "Copied!";
+      copyBtn.classList.remove("bg-primary", "hover:bg-primary/90");
+      copyBtn.classList.add("bg-green-500", "hover:bg-green-600");
+
       setTimeout(() => {
         copyBtn.textContent = originalText;
-        copyBtn.classList.remove('bg-green-500', 'hover:bg-green-600');
-        copyBtn.classList.add('bg-primary', 'hover:bg-primary/90');
+        copyBtn.classList.remove("bg-green-500", "hover:bg-green-600");
+        copyBtn.classList.add("bg-primary", "hover:bg-primary/90");
       }, 2000);
     } catch (error) {
-      console.error('Failed to copy:', error);
-      alert('Failed to copy to clipboard');
+      console.error("Failed to copy:", error);
+      alert("Failed to copy to clipboard");
     }
   }
-
 
   // Helper function to get time ago string
   function getTimeAgo(timestamp) {
@@ -359,8 +422,8 @@ document.addEventListener("DOMContentLoaded", async function () {
     const minutes = Math.floor(diff / (1000 * 60));
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
-    if (minutes < 1) return 'just now';
+
+    if (minutes < 1) return "just now";
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     return `${days}d ago`;
@@ -368,13 +431,16 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   // Clear all history for current user
   async function clearAllHistory() {
-    if (confirm('Are you sure you want to clear all formatting history?')) {
+    if (confirm("Are you sure you want to clear all formatting history?")) {
       try {
         // Get current user
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
         if (userError || !user) {
           console.log("No user found, cannot clear history");
-          alert('Please log in to clear history');
+          alert("Please log in to clear history");
           return;
         }
 
@@ -382,10 +448,10 @@ document.addEventListener("DOMContentLoaded", async function () {
         const historyKey = `formatting_history_${user.id}`;
         await chrome.storage.local.remove([historyKey]);
         displayHistory([]);
-        console.log('History cleared for user:', user.id);
+        console.log("History cleared for user:", user.id);
       } catch (error) {
-        console.error('Error clearing history:', error);
-        alert('Failed to clear history');
+        console.error("Error clearing history:", error);
+        alert("Failed to clear history");
       }
     }
   }

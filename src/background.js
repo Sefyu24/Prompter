@@ -7,43 +7,65 @@ let currentUser = null;
 
 // Initialize context menu when extension loads
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log("Extension installed/loaded");
-  await loadUserData(); // Load user data FIRST
-  // Context menu will be created by loadUserData() if user is logged in
+  console.log("🚀 Background: Extension installed/loaded");
+
+  // Add delay to allow storage adapter to initialize properly
+  setTimeout(async () => {
+    await loadUserData(); // Load user data FIRST
+    // Context menu will be created by loadUserData() if user is logged in
+  }, 500);
 });
 
 // Listen for Supabase auth state changes
 supabase.auth.onAuthStateChange(async (event, session) => {
-  console.log('🔔 Supabase auth state changed:', event, 'User:', session?.user?.email || 'no user');
-  
-  if (event === 'SIGNED_IN' && session) {
-    console.log('✅ User signed in, reloading data for:', session.user?.email);
+  console.log(
+    "🔔 Background: Supabase auth state changed:",
+    event,
+    "User:",
+    session?.user?.email || "no user"
+  );
+
+  if (event === "SIGNED_IN" && session) {
+    console.log(
+      "✅ Background: User signed in, reloading data for:",
+      session.user?.email
+    );
     try {
       await loadUserData();
       await updateContextMenu();
-      console.log('✅ Post-signin data load completed');
+      console.log("✅ Background: Post-signin data load completed");
     } catch (error) {
-      console.error('❌ Error during post-signin data load:', error);
+      console.error(
+        "❌ Background: Error during post-signin data load:",
+        error
+      );
     }
-  } else if (event === 'SIGNED_OUT') {
-    console.log('👋 User signed out, clearing data');
+  } else if (event === "SIGNED_OUT") {
+    console.log("👋 Background: User signed out, clearing data");
     currentUser = null;
     userTemplates = [];
     await updateContextMenu();
-  } else if (event === 'TOKEN_REFRESHED' && session) {
-    console.log('🔄 Token refreshed for user:', session.user?.email);
+  } else if (event === "TOKEN_REFRESHED" && session) {
+    console.log(
+      "🔄 Background: Token refreshed for user:",
+      session.user?.email
+    );
     currentUser = session.user;
   } else {
-    console.log('ℹ️ Other auth event:', event);
+    console.log("ℹ️ Background: Other auth event:", event);
   }
 });
 
 // Load user data on startup
 chrome.runtime.onStartup.addListener(async () => {
-  console.log("Extension startup detected");
-  // Supabase will automatically restore session from storage adapter
-  await loadUserData();
-  await updateContextMenu();
+  console.log("🚀 Background: Extension startup detected");
+
+  // Add delay to ensure storage adapter is ready
+  setTimeout(async () => {
+    // Supabase will automatically restore session from storage adapter
+    await loadUserData();
+    await updateContextMenu();
+  }, 500);
 });
 
 /**
@@ -54,9 +76,12 @@ chrome.runtime.onStartup.addListener(async () => {
 async function ensureValidSession() {
   try {
     console.log("Checking session validity...");
-    
+
     // Get current session - Supabase automatically handles storage and refresh
-    const { data: { session }, error } = await supabase.auth.getSession();
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession();
 
     if (error) {
       console.log("Session validation failed:", error);
@@ -94,58 +119,70 @@ async function ensureValidSession() {
  */
 async function loadUserData() {
   try {
-    console.log("🔄 Loading user data...");
-    
-    // Get session using Supabase's automatic session management
-    console.log("📋 Attempting to retrieve session from Supabase...");
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    console.log("🔄 Background: Loading user data...");
 
-    console.log("📋 Session retrieval result:", {
+    // Get session using Supabase's automatic session management
+    console.log(
+      "📋 Background: Attempting to retrieve session from Supabase..."
+    );
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession();
+
+    console.log("📋 Background: Session retrieval result:", {
       hasSession: !!session,
       hasError: !!sessionError,
-      sessionUser: session?.user?.email || 'no user',
-      tokenPresent: !!session?.access_token
+      sessionUser: session?.user?.email || "no user",
+      tokenPresent: !!session?.access_token,
     });
 
     if (sessionError) {
-      console.error("❌ Session error:", sessionError);
+      console.error("❌ Background: Session error:", sessionError);
       throw sessionError;
     }
 
     if (!session) {
-      console.log("⚠️ No session found, creating context menu without templates");
+      console.log(
+        "⚠️ Background: No session found, creating context menu without templates"
+      );
       currentUser = null;
       userTemplates = [];
-      // Create context menu without templates if user not logged in
       await createContextMenuWithTemplates();
       return;
     }
 
-    console.log("✅ Valid session found, loading user data");
-    console.log("🔑 Token info:", {
+    console.log("✅ Background: Valid session found, loading user data");
+    console.log("🔑 Background: Token info:", {
       tokenLength: session.access_token?.length || 0,
-      tokenStart: session.access_token?.substring(0, 20) + '...',
+      tokenStart: session.access_token?.substring(0, 20) + "...",
       expiresAt: session.expires_at,
-      refreshToken: !!session.refresh_token
+      refreshToken: !!session.refresh_token,
     });
-    
+
     // Get current user - session is already valid
-    console.log("👤 Attempting to get user info...");
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    console.log("👤 Background: Attempting to get user info...");
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
     if (userError) {
-      console.error("❌ User error:", userError);
+      console.error("❌ Background: User error:", userError);
       throw userError;
     }
 
     currentUser = user;
-    console.log("✅ Current user loaded:", user?.email || 'no email');
+    console.log(
+      "✅ Background: Current user loaded:",
+      user?.email || "no email"
+    );
 
     // Load user's templates using API route
     try {
-      console.log("📄 Making API call to fetch templates");
-      console.log("🔑 Using token for API:", {
+      console.log("📄 Background: Making API call to fetch templates");
+      console.log("🔑 Background: Using token for API:", {
         tokenStart: session.access_token?.substring(0, 20) + "...",
-        tokenLength: session.access_token?.length
+        tokenLength: session.access_token?.length,
       });
 
       const response = await fetch(
@@ -159,27 +196,34 @@ async function loadUserData() {
         }
       );
 
-      console.log("📡 API response status:", response.status);
-      
+      console.log("📡 Background: API response status:", response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("❌ API error response:", errorText);
+        console.error("❌ Background: API error response:", errorText);
         throw new Error(
           `Failed to fetch templates: ${response.status} - ${errorText}`
         );
       }
 
       const templates = await response.json();
-      console.log("✅ Successfully fetched templates:", templates?.length || 0);
+      console.log(
+        "✅ Background: Successfully fetched templates:",
+        templates?.length || 0
+      );
       if (templates && templates.length > 0) {
-        console.log("📋 Template names:", templates.map(t => t.name));
+        console.log(
+          "📋 Background: Template names:",
+          templates.map((t) => t.name)
+        );
       }
       userTemplates = templates || [];
     } catch (error) {
-      console.error("❌ Error fetching templates from API:", error);
+      console.error("❌ Background: Error fetching templates from API:", error);
       userTemplates = [];
     }
-    console.log("📊 Final template count:", userTemplates.length);
+
+    console.log("📊 Background: Final template count:", userTemplates.length);
 
     // Migrate old history format if needed
     await migrateOldHistory(user.id);
@@ -187,7 +231,7 @@ async function loadUserData() {
     // Update context menu after loading templates
     await updateContextMenu();
   } catch (error) {
-    console.error("Error loading user data:", error);
+    console.error("❌ Background: Error loading user data:", error);
     // Fallback: create context menu without templates
     userTemplates = [];
     currentUser = null;
@@ -755,12 +799,34 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
     // Check if user has templates after loading
     if (!userTemplates || userTemplates.length === 0) {
-      console.log("No templates available for user:", currentUser.email);
-      chrome.tabs.sendMessage(tab.id, {
-        action: "showKeyboardModal",
-        error: "No templates available. Please create templates first.",
-      });
-      return;
+      console.log(
+        "⚠️ Templates missing, attempting to reload for user:",
+        currentUser?.email
+      );
+
+      // Try to reload templates first
+      try {
+        await loadUserData();
+        console.log(
+          "🔄 Templates reloaded, count:",
+          userTemplates?.length || 0
+        );
+      } catch (error) {
+        console.error("❌ Failed to reload templates:", error);
+      }
+
+      // Check again after reload
+      if (!userTemplates || userTemplates.length === 0) {
+        console.log(
+          "❌ No templates available after reload for user:",
+          currentUser?.email
+        );
+        chrome.tabs.sendMessage(tab.id, {
+          action: "showKeyboardModal",
+          error: "No templates available. Please create templates first.",
+        });
+        return;
+      }
     }
 
     console.log(
@@ -779,7 +845,43 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
 // Handle messages from content script (including keyboard modal selections)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("Background received message:", message.action);
+  console.log("Background received message:", message.action || message.type);
+
+  // Handle auth state changes from popup
+  if (message.type === "AUTH_STATE_CHANGED") {
+    console.log(
+      "🔔 Background: Received auth state change from popup:",
+      message.event
+    );
+
+    (async () => {
+      try {
+        if (message.event === "SIGNED_IN" && message.session) {
+          console.log("✅ Background: Processing sign-in from popup");
+          // Wait a moment for Supabase to process the session
+          setTimeout(async () => {
+            await loadUserData();
+            await updateContextMenu();
+            console.log("✅ Background: Auth sync from popup completed");
+          }, 1000);
+        } else if (message.event === "SIGNED_OUT") {
+          console.log("👋 Background: Processing sign-out from popup");
+          currentUser = null;
+          userTemplates = [];
+          await updateContextMenu();
+        }
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error(
+          "❌ Background: Error processing auth state change:",
+          error
+        );
+        sendResponse({ success: false, error: error.message });
+      }
+    })();
+
+    return true; // Keep message channel open for async response
+  }
 
   if (message.action === "formatWithTemplate") {
     const { templateId, selectedText } = message;
@@ -926,7 +1028,7 @@ async function finishUserOAuth(url) {
     console.log("👤 User authenticated:", data.user?.email);
     console.log("💾 Session data present:", !!data.session);
     console.log("✅ Session automatically stored via Chrome storage adapter");
-    
+
     // Trigger a manual load to ensure data is available
     console.log("🔄 Manually triggering loadUserData after OAuth...");
     try {
