@@ -12,135 +12,141 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Context menu will be created by loadUserData() if user is logged in
 });
 
-// Listen for user session changes
-chrome.storage.onChanged.addListener(async (changes, namespace) => {
-  if (namespace === "local" && changes.session) {
-    if (changes.session.newValue) {
+// Listen for Supabase auth state changes
+supabase.auth.onAuthStateChange(async (event, session) => {
+  console.log('🔔 Supabase auth state changed:', event, 'User:', session?.user?.email || 'no user');
+  
+  if (event === 'SIGNED_IN' && session) {
+    console.log('✅ User signed in, reloading data for:', session.user?.email);
+    try {
       await loadUserData();
       await updateContextMenu();
-    } else {
-      // User logged out
-      currentUser = null;
-      userTemplates = [];
-      updateContextMenu();
+      console.log('✅ Post-signin data load completed');
+    } catch (error) {
+      console.error('❌ Error during post-signin data load:', error);
     }
+  } else if (event === 'SIGNED_OUT') {
+    console.log('👋 User signed out, clearing data');
+    currentUser = null;
+    userTemplates = [];
+    await updateContextMenu();
+  } else if (event === 'TOKEN_REFRESHED' && session) {
+    console.log('🔄 Token refreshed for user:', session.user?.email);
+    currentUser = session.user;
+  } else {
+    console.log('ℹ️ Other auth event:', event);
   }
 });
 
 // Load user data on startup
 chrome.runtime.onStartup.addListener(async () => {
-  const { session } = await chrome.storage.local.get(["session"]);
-  if (session) {
-    await loadUserData();
-    await updateContextMenu();
-  }
+  console.log("Extension startup detected");
+  // Supabase will automatically restore session from storage adapter
+  await loadUserData();
+  await updateContextMenu();
 });
 
 /**
- * Ensures we have a valid session by refreshing if needed
+ * Ensures we have a valid session using Supabase's automatic session management
  * @async
  * @returns {Promise<void>}
  */
 async function ensureValidSession() {
   try {
-    const { session } = await chrome.storage.local.get(["session"]);
-
-    if (!session) {
-      console.log("No session found in storage");
-      return;
-    }
-
-    // Try to refresh the session using the refresh token
-    const { data, error } = await supabase.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token,
-    });
+    console.log("Checking session validity...");
+    
+    // Get current session - Supabase automatically handles storage and refresh
+    const { data: { session }, error } = await supabase.auth.getSession();
 
     if (error) {
-      console.log("Session refresh failed:", error);
-      // Clear invalid session
-      await chrome.storage.local.remove(["session"]);
+      console.log("Session validation failed:", error);
       currentUser = null;
       userTemplates = [];
       throw new Error("You need to be authenticated first");
     }
 
-    // Update session if it was refreshed
-    if (data.session && data.session.access_token !== session.access_token) {
-      console.log("Session refreshed, updating storage");
-      await chrome.storage.local.set({ session: data.session });
+    if (!session) {
+      console.log("No valid session found");
+      currentUser = null;
+      userTemplates = [];
+      throw new Error("You need to be authenticated first");
     }
 
-    // Update current user if needed
-    if (data.user) {
-      currentUser = data.user;
-      console.log("Current user updated:", data.user.email);
+    // Update current user if we have a valid session
+    if (session.user) {
+      currentUser = session.user;
+      console.log("Session valid for user:", session.user.email);
     }
+
+    return session;
   } catch (error) {
     console.error("Error ensuring valid session:", error);
+    currentUser = null;
+    userTemplates = [];
     throw error;
   }
 }
 
 /**
- * Loads the current user's data and templates from Supabase
+ * Loads the current user's data and templates using Supabase automatic session management
  * @async
  * @returns {Promise<void>}
  */
 async function loadUserData() {
   try {
-    console.log("Loading user data...");
-    const { session } = await chrome.storage.local.get(["session"]);
+    console.log("🔄 Loading user data...");
+    
+    // Get session using Supabase's automatic session management
+    console.log("📋 Attempting to retrieve session from Supabase...");
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    console.log("📋 Session retrieval result:", {
+      hasSession: !!session,
+      hasError: !!sessionError,
+      sessionUser: session?.user?.email || 'no user',
+      tokenPresent: !!session?.access_token
+    });
+
+    if (sessionError) {
+      console.error("❌ Session error:", sessionError);
+      throw sessionError;
+    }
 
     if (!session) {
-      console.log("No session found, creating context menu without templates");
+      console.log("⚠️ No session found, creating context menu without templates");
+      currentUser = null;
+      userTemplates = [];
       // Create context menu without templates if user not logged in
       await createContextMenuWithTemplates();
       return;
     }
 
-    console.log("Session found, restoring user session");
-    // Set the session in Supabase
-    const { data: sessionData, error: sessionError } =
-      await supabase.auth.setSession({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-      });
-
-    if (sessionError) throw sessionError;
-
-    // Get current user
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser();
-    if (userError) throw userError;
+    console.log("✅ Valid session found, loading user data");
+    console.log("🔑 Token info:", {
+      tokenLength: session.access_token?.length || 0,
+      tokenStart: session.access_token?.substring(0, 20) + '...',
+      expiresAt: session.expires_at,
+      refreshToken: !!session.refresh_token
+    });
+    
+    // Get current user - session is already valid
+    console.log("👤 Attempting to get user info...");
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      console.error("❌ User error:", userError);
+      throw userError;
+    }
 
     currentUser = user;
-    console.log("Current user:", user.email);
-
-    // Use the current session token (may be refreshed)
-    const currentSession = sessionData.session || session;
-
-    // Update storage if session was refreshed
-    if (
-      sessionData.session &&
-      sessionData.session.access_token !== session.access_token
-    ) {
-      console.log(
-        "Session was refreshed during loadUserData, updating storage"
-      );
-      await chrome.storage.local.set({ session: sessionData.session });
-    }
+    console.log("✅ Current user loaded:", user?.email || 'no email');
 
     // Load user's templates using API route
     try {
-      console.log("Making API call to fetch templates");
-      console.log(
-        "Token first 20 chars:",
-        currentSession.access_token?.substring(0, 20) + "..."
-      );
-      console.log("Token length:", currentSession.access_token?.length);
+      console.log("📄 Making API call to fetch templates");
+      console.log("🔑 Using token for API:", {
+        tokenStart: session.access_token?.substring(0, 20) + "...",
+        tokenLength: session.access_token?.length
+      });
 
       const response = await fetch(
         "http://localhost:3000/api/extension/templates",
@@ -148,33 +154,32 @@ async function loadUserData() {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${currentSession.access_token}`,
+            Authorization: `Bearer ${session.access_token}`,
           },
         }
       );
 
-      console.log("API response status:", response.status);
-      console.log(
-        "API response headers:",
-        Object.fromEntries(response.headers.entries())
-      );
-
+      console.log("📡 API response status:", response.status);
+      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("API error response:", errorText);
+        console.error("❌ API error response:", errorText);
         throw new Error(
           `Failed to fetch templates: ${response.status} - ${errorText}`
         );
       }
 
       const templates = await response.json();
-      console.log("Successfully fetched templates:", templates?.length || 0);
+      console.log("✅ Successfully fetched templates:", templates?.length || 0);
+      if (templates && templates.length > 0) {
+        console.log("📋 Template names:", templates.map(t => t.name));
+      }
       userTemplates = templates || [];
     } catch (error) {
-      console.error("Error fetching templates from API:", error);
+      console.error("❌ Error fetching templates from API:", error);
       userTemplates = [];
     }
-    console.log("Loaded templates:", userTemplates.length, "templates");
+    console.log("📊 Final template count:", userTemplates.length);
 
     // Migrate old history format if needed
     await migrateOldHistory(user.id);
@@ -321,8 +326,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       console.log("Template still not found, fetching from API...");
       try {
         // Ensure valid session before making API call
-        await ensureValidSession();
-        const { session } = await chrome.storage.local.get(["session"]);
+        const session = await ensureValidSession();
 
         if (!session) {
           throw new Error("No valid session available");
@@ -423,10 +427,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 async function formatTextWithTemplate(text, template, user) {
   try {
     // Ensure we have valid session and user state
-    await ensureValidSession();
-
-    // Get the current session to extract JWT token (may be refreshed by ensureValidSession)
-    const { session } = await chrome.storage.local.get(["session"]);
+    const session = await ensureValidSession();
 
     if (!session || !session.access_token) {
       throw new Error("You need to be authenticated first");
@@ -910,22 +911,30 @@ async function finishUserOAuth(url) {
       throw new Error(`no supabase tokens found in URL hash`);
     }
 
-    // check if they work
+    // Set session in Supabase - storage adapter will automatically persist it
+    console.log("🔐 Setting session in Supabase...");
     const { data, error } = await supabase.auth.setSession({
       access_token,
       refresh_token,
     });
     if (error) {
-      console.log("this is the error related to setting the session", error);
+      console.error("❌ Error setting session:", error);
       throw error;
     }
 
-    console.log("user data", data.user);
-    console.log("session data", data.session);
-
-    // persist session to storage
-    await chrome.storage.local.set({ session: data.session });
-    console.log("✅ Session saved to chrome storage");
+    console.log("✅ Session set successfully!");
+    console.log("👤 User authenticated:", data.user?.email);
+    console.log("💾 Session data present:", !!data.session);
+    console.log("✅ Session automatically stored via Chrome storage adapter");
+    
+    // Trigger a manual load to ensure data is available
+    console.log("🔄 Manually triggering loadUserData after OAuth...");
+    try {
+      await loadUserData();
+      console.log("✅ Manual post-OAuth data load completed");
+    } catch (error) {
+      console.error("❌ Manual post-OAuth data load failed:", error);
+    }
 
     // Close the OAuth tab instead of redirecting
     const tabs = await chrome.tabs.query({ url: url });

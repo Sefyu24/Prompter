@@ -11,7 +11,8 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   async function handleAuthSuccess(sessionData) {
     try {
-      // Create proper Supabase session
+      console.log('🔐 Popup: Handling auth success...');
+      // Create proper Supabase session - storage adapter will automatically persist it
       const { error } = await supabase.auth.setSession({
         access_token: sessionData.access_token,
         refresh_token: sessionData.refresh_token,
@@ -19,16 +20,10 @@ document.addEventListener("DOMContentLoaded", async function () {
 
       if (error) throw error;
 
-      // Update storage with full session
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      await chrome.storage.local.set({ session });
-
-      // Show home page
-      showHomePage();
+      console.log('✅ Popup: Session set successfully');
+      // Auth state change listener will automatically show home page
     } catch (error) {
-      console.error("Error handling auth success:", error);
+      console.error("❌ Popup: Error handling auth success:", error);
       showError("Authentication failed. Please try again.");
     }
   }
@@ -47,59 +42,42 @@ document.addEventListener("DOMContentLoaded", async function () {
     chrome.identity.getRedirectURL()
   );
 
-  // Debug: Check stored session and restore it to Supabase
-  chrome.storage.local.get(['session'], async (result) => {
-    console.log('Stored session:', result.session);
-    if (result.session) {
-      try {
-        // Restore the session to the Supabase client
-        const { error } = await supabase.auth.setSession({
-          access_token: result.session.access_token,
-          refresh_token: result.session.refresh_token,
-        });
-        
-        if (error) {
-          console.error('Error restoring session:', error);
-          showLoginPage();
-        } else {
-          console.log('Session restored successfully');
-          showHomePage();
-        }
-      } catch (error) {
-        console.error('Error restoring session:', error);
-        showLoginPage();
-      }
+  // Check for existing session using Supabase's automatic session management
+  console.log('🔍 Checking for existing session...');
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    console.log('📋 Session check result:', {
+      hasSession: !!session,
+      hasError: !!error,
+      userEmail: session?.user?.email || 'no user'
+    });
+    
+    if (error) {
+      console.error('❌ Session error:', error);
+      showLoginPage();
+    } else if (session && session.user) {
+      console.log('✅ Valid session found, showing home page');
+      showHomePage();
     } else {
+      console.log('⚠️ No session found, showing login page');
       showLoginPage();
     }
-  });
+  } catch (error) {
+    console.error('❌ Error checking session:', error);
+    showLoginPage();
+  }
 
-  // Listen for storage changes (when session is saved)
-  chrome.storage.onChanged.addListener(async (changes, namespace) => {
-    if (namespace === 'local' && changes.session) {
-      console.log('Session changed:', changes.session.newValue);
-      if (changes.session.newValue) {
-        try {
-          // Restore the new session to the Supabase client
-          const { error } = await supabase.auth.setSession({
-            access_token: changes.session.newValue.access_token,
-            refresh_token: changes.session.newValue.refresh_token,
-          });
-          
-          if (error) {
-            console.error('Error setting new session:', error);
-            showLoginPage();
-          } else {
-            console.log('New session set successfully');
-            showHomePage();
-          }
-        } catch (error) {
-          console.error('Error setting new session:', error);
-          showLoginPage();
-        }
-      } else {
-        showLoginPage();
-      }
+  // Listen for Supabase auth state changes
+  supabase.auth.onAuthStateChange((event, session) => {
+    console.log('🔔 Popup: Auth state changed:', event, session?.user?.email || 'no user');
+    
+    if (event === 'SIGNED_IN' && session) {
+      console.log('✅ Popup: User signed in, showing home page');
+      showHomePage();
+    } else if (event === 'SIGNED_OUT') {
+      console.log('👋 Popup: User signed out, showing login page');
+      showLoginPage();
     }
   });
 
