@@ -217,66 +217,21 @@ async function loadUserData() {
 }
 
 /**
- * Creates the complete context menu with templates
+ * Creates the simplified context menu with just the extension option
  * @returns {Promise<void>}
  */
 async function createContextMenuWithTemplates() {
   return new Promise((resolve) => {
     // First, remove all existing menus
     chrome.contextMenus.removeAll(() => {
-      // Create parent menu item
+      // Create single menu item that opens the modal
       chrome.contextMenus.create(
         {
           id: "prompter-format",
-          title: "Format prompt with Prompter",
+          title: "Prompter",
           contexts: ["selection"],
         },
-        () => {
-          // Parent created, now add children
-          if (userTemplates.length > 0) {
-            // Add separator
-            chrome.contextMenus.create({
-              id: "prompter-separator",
-              type: "separator",
-              parentId: "prompter-format",
-              contexts: ["selection"],
-            });
-
-            // Track templates added
-            let templatesAdded = 0;
-
-            // Add template options
-            userTemplates.forEach((template) => {
-              chrome.contextMenus.create(
-                {
-                  id: `template-${template.id}`,
-                  title: template.name,
-                  parentId: "prompter-format",
-                  contexts: ["selection"],
-                },
-                () => {
-                  templatesAdded++;
-                  // Resolve when all templates are added
-                  if (templatesAdded === userTemplates.length) {
-                    resolve();
-                  }
-                }
-              );
-            });
-          } else {
-            // No templates message
-            chrome.contextMenus.create(
-              {
-                id: "no-templates",
-                title: "No templates available",
-                parentId: "prompter-format",
-                contexts: ["selection"],
-                enabled: false,
-              },
-              resolve
-            );
-          }
-        }
+        resolve
       );
     });
   });
@@ -302,119 +257,52 @@ async function updateContextMenu() {
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId.startsWith("template-")) {
-    const templateId = info.menuItemId.replace("template-", "");
-    const selectedText = info.selectionText;
-
-    console.log("Context menu clicked for template:", templateId);
-    console.log("Current userTemplates count:", userTemplates.length);
+  if (info.menuItemId === "prompter-format") {
+    console.log("Context menu clicked - opening modal");
     console.log("Current user:", currentUser?.email || "Not logged in");
+    console.log("Available templates:", userTemplates?.length || 0);
 
-    // Check if we have a stored access token (no need to validate, API will do that)
     try {
+      // Check if we have a stored access token
       await getStoredAccessToken();
     } catch (error) {
-      console.error("No access token found:", error);
+      console.log("No access token found, cannot show modal");
       chrome.tabs.sendMessage(tab.id, {
-        action: "showError",
-        message: "You need to be authenticated first",
+        action: "showKeyboardModal",
+        error: "You need to be authenticated first",
       });
       return;
     }
 
-    // Find the template in current cache
-    let template = userTemplates.find((t) => t.id === templateId);
-
-    // If template not found, try reloading user data (service worker might have restarted)
-    if (!template) {
-      console.log("Template not found in cache, reloading user data...");
-      await loadUserData();
-      template = userTemplates.find((t) => t.id === templateId);
-      console.log("After reload, userTemplates count:", userTemplates.length);
-    }
-
-    // If still not found, fetch from API
-    if (!template) {
-      console.log("Template still not found, fetching from API...");
+    // If templates appear to not be loaded, try reloading
+    if (!userTemplates || userTemplates.length === 0) {
+      console.log("Templates appear empty, attempting to reload...");
       try {
-        // Get stored access token directly
-        const accessToken = await getStoredAccessToken();
-
-        const response = await fetch(API_CONFIG.getUrl('TEMPLATES'), {
-          method: "GET",
-          headers: API_CONFIG.getHeaders(accessToken),
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch templates: ${response.status}`);
-        }
-
-        const templates = await response.json();
-        template = templates.find((t) => t.id === templateId);
-
-        // Update userTemplates cache
-        userTemplates = templates;
+        await loadUserData();
+        console.log("Templates reloaded, count:", userTemplates?.length || 0);
       } catch (error) {
-        console.error("Failed to fetch template from API:", error);
+        console.error("Failed to reload templates:", error);
+      }
+
+      // Check again after reload
+      if (!userTemplates || userTemplates.length === 0) {
+        console.log("No templates available after reload");
         chrome.tabs.sendMessage(tab.id, {
-          action: "showError",
-          message: "Template not found. Please refresh and try again.",
+          action: "showKeyboardModal",
+          error: "No templates available. Please create templates first.",
         });
         return;
       }
     }
 
-    if (!template) {
-      console.error("Template not found:", templateId);
-      chrome.tabs.sendMessage(tab.id, {
-        action: "showError",
-        message: "Template not found. Please refresh and try again.",
-      });
-      return;
-    }
+    console.log("Sending modal with templates:", userTemplates.map((t) => t.name));
 
-    // Send message to content script to show loading
-    chrome.tabs.sendMessage(tab.id, { action: "showLoading" });
-
-    try {
-      // Format the text using the template
-      const formattedText = await formatTextWithTemplate(
-        selectedText,
-        template,
-        currentUser
-      );
-
-      // Send formatted text back to content script
-      chrome.tabs.sendMessage(tab.id, {
-        action: "replaceText",
-        newText: formattedText,
-      });
-
-      // Track the formatting request
-      await trackFormattingRequest(
-        currentUser.id,
-        templateId,
-        selectedText,
-        formattedText
-      );
-
-      // Save to local history
-      const domain = new URL(tab.url).hostname;
-      await saveToHistory(
-        templateId,
-        template.name,
-        selectedText,
-        formattedText,
-        domain,
-        currentUser.id
-      );
-    } catch (error) {
-      console.error("Error formatting text:", error);
-      chrome.tabs.sendMessage(tab.id, {
-        action: "showError",
-        message: "Failed to format text",
-      });
-    }
+    // Send templates to content script to show modal
+    chrome.tabs.sendMessage(tab.id, {
+      action: "showKeyboardModal",
+      templates: userTemplates,
+      user: currentUser,
+    });
   }
 });
 
@@ -431,7 +319,11 @@ async function formatTextWithTemplate(text, template, user) {
     // Get stored access token directly (no session validation needed)
     const accessToken = await getStoredAccessToken();
 
-    // Call your backend API instead of OpenAI directly
+    // Create an AbortController for timeout handling
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.REQUEST_TIMEOUT);
+
+    // Call your backend API with timeout
     const response = await fetch(API_CONFIG.getUrl('FORMAT'), {
       method: "POST",
       headers: API_CONFIG.getHeaders(accessToken),
@@ -439,7 +331,11 @@ async function formatTextWithTemplate(text, template, user) {
         templateId: template.id,
         userText: text,
       }),
+      signal: controller.signal,
     });
+
+    // Clear the timeout since the request completed
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -493,9 +389,13 @@ async function formatTextWithTemplate(text, template, user) {
     return formattedText;
   } catch (error) {
     console.error("Error calling backend API:", error);
-    // Fallback to simple template replacement
-    const promptTemplate = template.promptTemplate || template.prompt_template;
-    return promptTemplate ? promptTemplate.replace("{text}", text) : text;
+    
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timed out after ${API_CONFIG.REQUEST_TIMEOUT / 1000} seconds. Please try again.`);
+    }
+    
+    // Re-throw the error to be handled by the caller
+    throw error;
   }
 }
 
@@ -892,18 +792,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         console.log("Sending formatted response");
+        
+        // Send the result directly to the content script instead of using sendResponse
+        // This avoids Chrome's message timeout issues
+        chrome.tabs.sendMessage(sender.tab.id, {
+          action: "formatComplete",
+          formattedText: formattedText,
+          originalTemplateId: templateId
+        });
+        
+        // Still try to send response in case the content script is waiting
         try {
           sendResponse({ formattedText });
         } catch (e) {
-          console.log("Response channel already closed, but formatting completed");
+          console.log("Response channel already closed, but formatting completed via direct message");
         }
       } catch (error) {
         console.error("Error formatting text from keyboard modal:", error);
         const errorMessage = error.message || "Failed to format text";
+        
+        // Send error directly to content script
+        chrome.tabs.sendMessage(sender.tab.id, {
+          action: "formatError",
+          error: errorMessage,
+          originalTemplateId: templateId
+        });
+        
         try {
           sendResponse({ error: errorMessage });
         } catch (e) {
-          console.log("Response channel already closed");
+          console.log("Response channel already closed, but error sent via direct message");
         }
       }
     })();

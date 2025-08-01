@@ -109,6 +109,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.action === "showKeyboardModal") {
     // Handle keyboard shortcut modal
     handleKeyboardModal(message);
+  } else if (message.action === "formatComplete") {
+    // Handle successful formatting from background script
+    handleFormatComplete(message);
+  } else if (message.action === "formatError") {
+    // Handle formatting error from background script
+    handleFormatError(message);
   }
 
   return true; // Keep message channel open for async responses
@@ -1045,6 +1051,9 @@ function updateTemplateList() {
   }
 }
 
+// Store current template being processed for timeout-resistant handling
+let currentProcessingTemplate = null;
+
 /**
  * Select a template and format the text
  */
@@ -1054,11 +1063,12 @@ function selectTemplate(index) {
   }
 
   const selectedTemplate = filteredTemplates[index];
+  currentProcessingTemplate = selectedTemplate;
 
   // Show loading state
   showLoadingState();
 
-  // Send message to background script to format text
+  // Send message to background script to format text with improved timeout handling
   chrome.runtime.sendMessage(
     {
       action: "formatWithTemplate",
@@ -1066,48 +1076,39 @@ function selectTemplate(index) {
       selectedText: modalSelectedText,
     },
     (response) => {
+      // Note: We now rely primarily on the direct messages (formatComplete/formatError)
+      // but still handle the response callback as a fallback
       if (chrome.runtime.lastError) {
         const errorMessage =
           chrome.runtime.lastError.message || "Unknown runtime error";
         console.error("Chrome runtime error:", errorMessage);
-        console.error("Full error object:", chrome.runtime.lastError);
-        showNotification(`Communication error: ${errorMessage}`, "error");
-        closeKeyboardModal();
+        
+        // Don't immediately show error - wait a bit for direct message
+        setTimeout(() => {
+          if (currentProcessingTemplate === selectedTemplate) {
+            console.error("No direct message received, showing runtime error");
+            showNotification(`Communication error: ${errorMessage}`, "error");
+            closeKeyboardModal();
+            currentProcessingTemplate = null;
+          }
+        }, 1000);
         return;
       }
 
-      if (!response) {
-        console.error("No response received from background script");
-        showNotification("No response from extension background", "error");
-        closeKeyboardModal();
-        return;
-      }
-
-      if (response.error) {
+      if (response && response.error) {
         console.error("Background script error:", response.error);
-        showNotification(response.error, "error");
-        closeKeyboardModal();
+        if (currentProcessingTemplate === selectedTemplate) {
+          showNotification(response.error, "error");
+          closeKeyboardModal();
+          currentProcessingTemplate = null;
+        }
         return;
       }
 
-      // Replace the selected text with formatted result
-      if (response.formattedText && modalTargetElement) {
-        try {
-          // Focus the target element
-          modalTargetElement.focus();
-
-          // Replace the text using existing function
-          replaceSelectedTextWithFormatted(response.formattedText);
-        } catch (error) {
-          console.error("Error during text replacement:", error);
-          showNotification("Failed to replace text", "error");
-        }
-      } else {
-        console.warn("No formatted text received or no target element");
-        showNotification("No formatted text received", "error");
+      // Handle successful response (but prefer direct messages)
+      if (response && response.formattedText && currentProcessingTemplate === selectedTemplate) {
+        handleSuccessfulFormat(response.formattedText);
       }
-
-      closeKeyboardModal();
     }
   );
 }
@@ -1501,6 +1502,54 @@ function positionModal() {
 }
 
 /**
+ * Handle successful formatting from background script (direct message)
+ */
+function handleFormatComplete(message) {
+  console.log("Received formatComplete message");
+  
+  if (currentProcessingTemplate && message.formattedText) {
+    handleSuccessfulFormat(message.formattedText);
+  }
+  currentProcessingTemplate = null;
+}
+
+/**
+ * Handle formatting error from background script (direct message)
+ */
+function handleFormatError(message) {
+  console.log("Received formatError message:", message.error);
+  
+  if (currentProcessingTemplate) {
+    showNotification(message.error, "error");
+    closeKeyboardModal();
+  }
+  currentProcessingTemplate = null;
+}
+
+/**
+ * Common handler for successful text formatting
+ */
+function handleSuccessfulFormat(formattedText) {
+  if (formattedText && modalTargetElement) {
+    try {
+      // Focus the target element
+      modalTargetElement.focus();
+
+      // Replace the text using existing function
+      replaceSelectedTextWithFormatted(formattedText);
+    } catch (error) {
+      console.error("Error during text replacement:", error);
+      showNotification("Failed to replace text", "error");
+    }
+  } else {
+    console.warn("No formatted text received or no target element");
+    showNotification("No formatted text received", "error");
+  }
+
+  closeKeyboardModal();
+}
+
+/**
  * Close the keyboard modal
  */
 function closeKeyboardModal() {
@@ -1515,6 +1564,7 @@ function closeKeyboardModal() {
   allTemplates = [];
   modalSelectedText = "";
   modalTargetElement = null;
+  currentProcessingTemplate = null;
 }
 
 /**
