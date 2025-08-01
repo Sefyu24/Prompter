@@ -907,6 +907,23 @@ function addModalStyles() {
       font-size: 14px;
     }
 
+    .prompter-success {
+      color: oklch(0.5568 0.2294 142.495) !important;
+      font-weight: 500;
+      animation: prompter-success-fade-in 0.3s ease-out;
+    }
+
+    @keyframes prompter-success-fade-in {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
     .prompter-footer {
       padding: 12px 20px;
       background: oklch(0.9702 0 0);
@@ -1117,93 +1134,104 @@ function selectTemplate(index) {
  * Replace selected text with formatted text (for keyboard modal)
  */
 function replaceSelectedTextWithFormatted(newText) {
-  if (!modalTargetElement) {
-    console.error("No target element for text replacement");
-    return;
-  }
+  return new Promise((resolve, reject) => {
+    if (!modalTargetElement) {
+      console.error("No target element for text replacement");
+      reject(new Error("No target element"));
+      return;
+    }
 
-  console.log(
-    "Replacing text in element:",
-    modalTargetElement.tagName,
-    modalTargetElement.contentEditable
-  );
-  console.log("Selected text to replace:", modalSelectedText);
-  console.log("New formatted text:", newText);
+    console.log(
+      "Replacing text in element:",
+      modalTargetElement.tagName,
+      modalTargetElement.contentEditable
+    );
+    console.log("Selected text to replace:", modalSelectedText);
+    console.log("New formatted text:", newText);
 
-  try {
-    // Focus the element first
-    modalTargetElement.focus();
+    try {
+      // Focus the element first
+      modalTargetElement.focus();
 
-    // Site-specific handling for better compatibility
-    if (isChatGPT) {
-      replaceTextForChatGPT(modalTargetElement, newText);
-    } else if (isClaude) {
-      replaceTextForClaude(modalTargetElement, newText);
-    } else if (isPerplexity || isT3Chat) {
-      replaceTextForPerplexity(modalTargetElement, newText, false);
-    } else if (isGemini) {
-      replaceTextForGemini(modalTargetElement, newText);
-    } else {
-      // Generic handling for other sites
-      if (
-        modalTargetElement.tagName.toLowerCase() === "textarea" ||
-        modalTargetElement.tagName.toLowerCase() === "input"
-      ) {
-        // For textarea and input elements
-        replaceTextInInputElement(modalTargetElement, newText);
-      } else if (modalTargetElement.contentEditable === "true") {
-        // For contenteditable elements
-        replaceTextInContentEditable(modalTargetElement, newText);
+      // Site-specific handling for better compatibility
+      if (isChatGPT) {
+        replaceTextForChatGPT(modalTargetElement, newText);
+      } else if (isClaude) {
+        replaceTextForClaude(modalTargetElement, newText);
+      } else if (isPerplexity || isT3Chat) {
+        replaceTextForPerplexity(modalTargetElement, newText, false);
+      } else if (isGemini) {
+        replaceTextForGemini(modalTargetElement, newText);
       } else {
-        // Fallback for other elements
-        console.warn("Unexpected element type, using fallback");
-        fallbackTextReplacement(modalTargetElement, newText);
+        // Generic handling for other sites
+        if (
+          modalTargetElement.tagName.toLowerCase() === "textarea" ||
+          modalTargetElement.tagName.toLowerCase() === "input"
+        ) {
+          // For textarea and input elements
+          replaceTextInInputElement(modalTargetElement, newText);
+        } else if (modalTargetElement.contentEditable === "true") {
+          // For contenteditable elements
+          replaceTextInContentEditable(modalTargetElement, newText);
+        } else {
+          // Fallback for other elements
+          console.warn("Unexpected element type, using fallback");
+          fallbackTextReplacement(modalTargetElement, newText);
+        }
       }
-    }
 
-    // Trigger events to notify the page of changes
-    const events = ["input", "change", "keyup", "paste"];
-    events.forEach((eventType) => {
-      modalTargetElement.dispatchEvent(new Event(eventType, { bubbles: true }));
-    });
-
-    // Additional React-compatible events
-    if (isChatGPT || isClaude || isGemini) {
-      // Trigger React synthetic events
-      const inputEvent = new InputEvent("input", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: newText,
+      // Trigger events to notify the page of changes
+      const events = ["input", "change", "keyup", "paste"];
+      events.forEach((eventType) => {
+        modalTargetElement.dispatchEvent(new Event(eventType, { bubbles: true }));
       });
-      modalTargetElement.dispatchEvent(inputEvent);
 
-      // Trigger composition events for better compatibility
-      modalTargetElement.dispatchEvent(
-        new CompositionEvent("compositionstart", { bubbles: true })
-      );
-      modalTargetElement.dispatchEvent(
-        new CompositionEvent("compositionend", { bubbles: true, data: newText })
-      );
+      // Additional React-compatible events
+      if (isChatGPT || isClaude || isGemini) {
+        // Trigger React synthetic events
+        const inputEvent = new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          inputType: "insertText",
+          data: newText,
+        });
+        modalTargetElement.dispatchEvent(inputEvent);
+
+        // Trigger composition events for better compatibility
+        modalTargetElement.dispatchEvent(
+          new CompositionEvent("compositionstart", { bubbles: true })
+        );
+        modalTargetElement.dispatchEvent(
+          new CompositionEvent("compositionend", { bubbles: true, data: newText })
+        );
+      }
+
+      // Special handling for React components
+      if (modalTargetElement._valueTracker) {
+        modalTargetElement._valueTracker.setValue("");
+      }
+
+      // Force React re-render by triggering additional events after a brief delay
+      setTimeout(() => {
+        modalTargetElement.dispatchEvent(new Event("blur", { bubbles: true }));
+        modalTargetElement.dispatchEvent(new Event("focus", { bubbles: true }));
+        
+        // Show visual feedback and resolve after all events have been processed
+        setTimeout(() => {
+          showTextReplacementFeedback(modalTargetElement);
+          resolve();
+        }, 50); // Small delay to ensure all events are processed
+      }, 10);
+
+    } catch (error) {
+      console.error("Error replacing text from modal:", error);
+      fallbackTextReplacement(modalTargetElement, newText);
+      // Still resolve after fallback
+      setTimeout(() => {
+        resolve();
+      }, 100);
     }
-
-    // Special handling for React components
-    if (modalTargetElement._valueTracker) {
-      modalTargetElement._valueTracker.setValue("");
-    }
-
-    // Force React re-render by triggering additional events
-    setTimeout(() => {
-      modalTargetElement.dispatchEvent(new Event("blur", { bubbles: true }));
-      modalTargetElement.dispatchEvent(new Event("focus", { bubbles: true }));
-    }, 10);
-
-    // Show visual feedback after successful replacement
-    showTextReplacementFeedback(modalTargetElement);
-  } catch (error) {
-    console.error("Error replacing text from modal:", error);
-    fallbackTextReplacement(modalTargetElement, newText);
-  }
+  });
 }
 
 /**
@@ -1490,6 +1518,38 @@ function showLoadingState() {
 }
 
 /**
+ * Show text replacement progress in modal
+ */
+function showTextReplacementProgress() {
+  if (!keyboardModal) return;
+
+  const templateList = keyboardModal.querySelector(".prompter-template-list");
+  if (templateList) {
+    templateList.innerHTML =
+      '<div class="prompter-empty">Replacing text...</div>';
+  }
+}
+
+/**
+ * Show success state and close modal after ensuring text replacement is complete
+ */
+function showSuccessAndClose() {
+  if (!keyboardModal) return;
+
+  const templateList = keyboardModal.querySelector(".prompter-template-list");
+  if (templateList) {
+    templateList.innerHTML =
+      '<div class="prompter-empty prompter-success">✅ Text replaced successfully!</div>';
+  }
+
+  // Wait a moment for the user to see the success message
+  // Text replacement is already complete when this function is called
+  setTimeout(() => {
+    closeKeyboardModal();
+  }, 600); // Show success message briefly before closing
+}
+
+/**
  * Position the modal on screen
  */
 function positionModal() {
@@ -1529,24 +1589,30 @@ function handleFormatError(message) {
 /**
  * Common handler for successful text formatting
  */
-function handleSuccessfulFormat(formattedText) {
+async function handleSuccessfulFormat(formattedText) {
   if (formattedText && modalTargetElement) {
     try {
+      // Show text replacement progress in modal
+      showTextReplacementProgress();
+      
       // Focus the target element
       modalTargetElement.focus();
 
-      // Replace the text using existing function
-      replaceSelectedTextWithFormatted(formattedText);
+      // Replace the text and wait for it to complete
+      await replaceSelectedTextWithFormatted(formattedText);
+      
+      // Show success state and close modal after ensuring replacement is complete
+      showSuccessAndClose();
     } catch (error) {
       console.error("Error during text replacement:", error);
       showNotification("Failed to replace text", "error");
+      closeKeyboardModal();
     }
   } else {
     console.warn("No formatted text received or no target element");
     showNotification("No formatted text received", "error");
+    closeKeyboardModal();
   }
-
-  closeKeyboardModal();
 }
 
 /**
