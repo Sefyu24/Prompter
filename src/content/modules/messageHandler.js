@@ -339,6 +339,12 @@ export class BackgroundCommunicator {
     this.messageHandler = messageHandler || new MessageHandler();
     /** @type {Map<string, {resolve: Function, reject: Function, timeout: number}>} */
     this.pendingFormatRequests = new Map();
+    /** @type {number} */
+    this.lastTemplatesFetch = 0;
+    /** @type {number} */
+    this.templatesFetchCooldown = 5000; // 5 seconds
+    /** @type {Array|null} */
+    this.cachedTemplates = null;
   }
 
   /**
@@ -481,10 +487,22 @@ export class BackgroundCommunicator {
   }
 
   /**
-   * Gets available templates
+   * Gets available templates with rate limiting protection
+   * @param {boolean} forceRefresh - Force refresh even if within cooldown period
    * @returns {Promise<Array>} Templates array
    */
-  async getTemplates() {
+  async getTemplates(forceRefresh = false) {
+    const now = Date.now();
+    
+    // Check if we're within cooldown period and have cached templates
+    if (!forceRefresh && this.cachedTemplates && (now - this.lastTemplatesFetch < this.templatesFetchCooldown)) {
+      console.log(`📋 Using cached templates (${this.cachedTemplates.length}) - cooldown active`);
+      return this.cachedTemplates;
+    }
+
+    console.log('📋 Fetching fresh templates from API...');
+    this.lastTemplatesFetch = now;
+
     const response = await this.messageHandler.sendMessage({
       action: 'GET_TEMPLATES'
     }, {
@@ -495,6 +513,10 @@ export class BackgroundCommunicator {
     if (!Array.isArray(response.templates)) {
       throw new Error("Invalid templates response");
     }
+
+    // Cache the templates for future use
+    this.cachedTemplates = response.templates;
+    console.log(`📋 Fresh templates cached (${this.cachedTemplates.length})`);
 
     return response.templates;
   }

@@ -892,27 +892,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Handle GET_TEMPLATES request from content script
   if (message.action === "GET_TEMPLATES") {
-    console.log("📋 Background: Handling GET_TEMPLATES request");
-    try {
-      const allTemplates = getAllTemplates();
-      console.log(
-        "📋 Background: Returning",
-        allTemplates.length,
-        "templates to content script"
-      );
-      sendResponse({
-        success: true,
-        templates: allTemplates,
-      });
-    } catch (error) {
-      console.error("❌ Background: Error getting templates:", error);
-      sendResponse({
-        success: false,
-        error: error.message,
-        templates: [],
-      });
-    }
-    return false; // Synchronous response
+    console.log("📋 Background: Handling GET_TEMPLATES request - fetching fresh templates");
+    
+    (async () => {
+      try {
+        // Reload fresh templates from API
+        await loadUserData();
+        
+        const allTemplates = getAllTemplates();
+        console.log(
+          "📋 Background: Returning",
+          allTemplates.length,
+          "fresh templates to content script"
+        );
+        sendResponse({
+          success: true,
+          templates: allTemplates,
+        });
+      } catch (error) {
+        console.error("❌ Background: Error fetching fresh templates:", error);
+        
+        // Fallback to cached templates if API fails
+        const fallbackTemplates = getAllTemplates();
+        console.log("📋 Background: Falling back to cached templates:", fallbackTemplates.length);
+        
+        sendResponse({
+          success: true,
+          templates: fallbackTemplates,
+          warning: "Using cached templates - API fetch failed"
+        });
+      }
+    })();
+    
+    return true; // Asynchronous response
   }
 
   if (message.action === "formatWithTemplate") {

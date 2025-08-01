@@ -681,12 +681,44 @@ export class ModalManager {
   }
 }
 
+// Debouncing state for modal opening
+let modalOpenTimeout = null;
+let lastModalOpenTime = 0;
+const MODAL_OPEN_DEBOUNCE = 500; // 500ms debounce
+
 /**
- * Handles keyboard modal message from background script
+ * Handles keyboard modal message from background script with debouncing
  * @param {ChromeMessage} message - Message from background script
  * @returns {Promise<void>}
  */
 export async function handleKeyboardModal(message) {
+  const now = Date.now();
+  
+  // Clear any existing timeout
+  if (modalOpenTimeout) {
+    clearTimeout(modalOpenTimeout);
+  }
+  
+  // If called too quickly, debounce it
+  if (now - lastModalOpenTime < MODAL_OPEN_DEBOUNCE) {
+    console.log('🚫 Modal opening debounced - preventing rapid calls');
+    modalOpenTimeout = setTimeout(() => {
+      handleKeyboardModalImmediate(message);
+    }, MODAL_OPEN_DEBOUNCE);
+    return;
+  }
+  
+  lastModalOpenTime = now;
+  return handleKeyboardModalImmediate(message);
+}
+
+/**
+ * Immediate handler for keyboard modal (internal function)
+ * @param {ChromeMessage} message - Message from background script
+ * @returns {Promise<void>}
+ * @private
+ */
+async function handleKeyboardModalImmediate(message) {
   // Check if there's an error message first
   if (message.error) {
     if (message.error.includes("authenticated")) {
@@ -755,14 +787,32 @@ export async function handleKeyboardModal(message) {
     return;
   }
 
-  // Create and show modal
-  const modalManager = new ModalManager();
-  await modalManager.show({
-    templates: message.templates || [],
-    selectedText: selectionInfo.text,
-    targetElement: targetElement,
-    error: message.error,
-  });
+  // Fetch fresh templates before showing modal
+  try {
+    console.log('📋 Fetching fresh templates before modal...');
+    const freshTemplates = await backgroundCommunicator.getTemplates();
+    console.log(`📋 Got ${freshTemplates.length} fresh templates for modal`);
+    
+    // Create and show modal with fresh templates
+    const modalManager = new ModalManager();
+    await modalManager.show({
+      templates: freshTemplates,
+      selectedText: selectionInfo.text,
+      targetElement: targetElement,
+      error: message.error,
+    });
+  } catch (templatesError) {
+    console.warn('⚠️ Failed to fetch fresh templates, using message templates:', templatesError);
+    
+    // Fallback to templates from message
+    const modalManager = new ModalManager();
+    await modalManager.show({
+      templates: message.templates || [],
+      selectedText: selectionInfo.text,
+      targetElement: targetElement,
+      error: message.error,
+    });
+  }
 }
 
 // Create a singleton instance for global use
