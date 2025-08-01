@@ -1,6 +1,7 @@
 import { supabase } from "./supabase.js";
 import { API_CONFIG } from "./config.js";
 import { createIcons, Zap, Settings } from 'lucide';
+import { cacheManager } from "./cacheManager.js";
 
 // Notification system for popup
 class PopupNotificationManager {
@@ -130,7 +131,7 @@ function getUserFriendlyErrorMessage(error, context = '') {
     return 'Request timed out. Please try again.';
   }
   
-  if (context === 'stats' || context === 'templates' || context === 'membership') {
+  if (context === 'stats' || context === 'membership') {
     return `Failed to load ${context}. Please refresh and try again.`;
   }
   
@@ -251,9 +252,21 @@ document.addEventListener("DOMContentLoaded", async function () {
       try {
         console.log("🚪 Signing out user...");
         
-        // Clear our custom session storage
+        // Get user ID before clearing session
         const storageKey = 'sb-audlasqcnqqtfednxmdo-auth-token';
+        const result = await chrome.storage.local.get([storageKey]);
+        const sessionData = result[storageKey];
+        const parsedSession = typeof sessionData === 'string' ? JSON.parse(sessionData) : sessionData;
+        const userId = parsedSession?.user?.id;
+
+        // Clear our custom session storage
         await chrome.storage.local.remove([storageKey]);
+        
+        // Clear user's cache data
+        if (userId) {
+          await cacheManager.invalidateUser(userId);
+          console.log("✅ User cache cleared");
+        }
         
         console.log("✅ Session cleared successfully");
 
@@ -346,25 +359,26 @@ document.addEventListener("DOMContentLoaded", async function () {
         userAvatarEl.src = user.user_metadata.avatar_url;
       }
 
-      // Fetch user stats from backend API
+      // Fetch user stats using cache manager
       try {
-        const response = await fetch(API_CONFIG.getUrl('STATS'), {
-          method: "GET",
-          headers: API_CONFIG.getHeaders(accessToken),
-        });
+        const userId = user.id;
+        const url = API_CONFIG.getUrl('STATS');
+        const headers = API_CONFIG.getHeaders(accessToken);
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch stats: ${response.status}`);
-        }
-
-        const stats = await response.json();
+        const { data: stats, fromCache } = await cacheManager.fetchWithCache(
+          url,
+          { method: "GET", headers },
+          "stats",
+          userId,
+          60000 // 1 minute TTL for stats
+        );
         
         // Store stats for later use with membership data
         window.currentStats = stats;
           
-        console.log("Stats loaded successfully:", stats);
+        console.log(`Stats loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`, stats);
       } catch (error) {
-        console.error("Error fetching stats from API:", error);
+        console.error("Error fetching stats:", error);
         notificationManager.showError(getUserFriendlyErrorMessage(error, 'stats'));
         // Set default stats for later use
         window.currentStats = { monthly_requests: 0 };
@@ -373,25 +387,6 @@ document.addEventListener("DOMContentLoaded", async function () {
       // Fetch user membership status
       await loadMembershipStatus(accessToken);
 
-      // Fetch user's templates from API instead of direct database access
-      try {
-        const templatesResponse = await fetch(API_CONFIG.getUrl('TEMPLATES'), {
-          method: "GET",
-          headers: API_CONFIG.getHeaders(accessToken),
-        });
-
-        if (!templatesResponse.ok) {
-          throw new Error(`Failed to fetch templates: ${templatesResponse.status}`);
-        }
-
-        const templates = await templatesResponse.json();
-        displayTemplates(templates || []);
-        console.log("Templates loaded successfully from API:", templates?.length || 0);
-      } catch (error) {
-        console.error("Error fetching templates from API:", error);
-        notificationManager.showError(getUserFriendlyErrorMessage(error, 'templates'));
-        displayTemplates([]);
-      }
 
       // Load formatting history
       await loadHistory();
@@ -401,23 +396,31 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
   }
 
-  // Load and display user membership status
+  // Load and display user membership status using cache manager
   async function loadMembershipStatus(accessToken) {
     try {
-      const response = await fetch(API_CONFIG.getUrl('USER'), {
-        method: "GET",
-        headers: API_CONFIG.getHeaders(accessToken),
-      });
+      // Get current user from stored session
+      const storageKey = 'sb-audlasqcnqqtfednxmdo-auth-token';
+      const result = await chrome.storage.local.get([storageKey]);
+      const sessionData = result[storageKey];
+      const parsedSession = typeof sessionData === 'string' ? JSON.parse(sessionData) : sessionData;
+      const userId = parsedSession?.user?.id;
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch user data: ${response.status}`);
-      }
+      const url = API_CONFIG.getUrl('USER');
+      const headers = API_CONFIG.getHeaders(accessToken);
 
-      const userData = await response.json();
-      console.log("🔍 Full API Response:", userData);
+      const { data: userData, fromCache } = await cacheManager.fetchWithCache(
+        url,
+        { method: "GET", headers },
+        "membership",
+        userId,
+        600000 // 10 minutes TTL for membership status
+      );
+
+      console.log(`🔍 Membership data loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`, userData);
       console.log("🔍 Subscription data:", userData.subscription);
       displayMembershipStatus(userData);
-      console.log("User membership status loaded successfully:", userData);
+      console.log("User membership status loaded successfully");
     } catch (error) {
       console.error("Error fetching user membership status:", error);
       notificationManager.showError(getUserFriendlyErrorMessage(error, 'membership'));
@@ -516,59 +519,6 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
   }
 
-  // Display templates in the list
-  function displayTemplates(templates) {
-    const templatesList = document.getElementById("templates-list");
-
-    if (templates.length === 0) {
-      templatesList.innerHTML =
-        '<p class="text-center text-muted-foreground text-sm py-5 m-0">No templates yet. Create your first template!</p>';
-      return;
-    }
-
-    // Build HTML for templates
-    const templatesHTML = templates
-      .map((template) => {
-        const templateType =
-          template.templateType || template.template_type || "json";
-        const badgeClass = `template-type-badge template-type-${templateType}`;
-        const sourceIndicator = template.source === 'promptr' 
-          ? (template.isFree === false ? '🔒 ' : '✨ ') 
-          : '';
-        
-        const sourceBadge = template.source === 'promptr'
-          ? `<span class="text-[10px] font-semibold px-2 py-1 rounded text-white ${
-              template.isFree === false 
-                ? 'bg-purple-600' 
-                : 'bg-green-600'
-            }" title="${template.isFree === false ? 'Pro template - requires Pro subscription' : 'Free promptr template'}">
-              ${template.isFree === false ? 'PRO' : 'FREE'}
-            </span>`
-          : '';
-
-        return `
-        <div class="bg-background border border-border rounded-md p-3 mb-[10px] cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-template-id="${
-          template.id
-        }">
-          <div class="flex items-center justify-between mb-1">
-            <div class="font-medium text-foreground">${sourceIndicator}${template.name}</div>
-            <div class="flex items-center gap-2">
-              ${sourceBadge}
-              <span class="${badgeClass}">${templateType.toUpperCase()}</span>
-            </div>
-          </div>
-          ${
-            template.description
-              ? `<div class="text-xs text-muted-foreground">${template.description}</div>`
-              : ""
-          }
-        </div>
-      `;
-      })
-      .join("");
-
-    templatesList.innerHTML = templatesHTML;
-  }
 
   // Load and display formatting history for current user
   async function loadHistory() {

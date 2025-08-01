@@ -276,7 +276,7 @@ export class ModalManager {
   handleSearch(event) {
     const query = event.target.value;
     templateRenderer.filterTemplates(query);
-    this.updateTemplateList();
+    this.updateTemplateListContent();
   }
 
   /**
@@ -400,7 +400,7 @@ export class ModalManager {
   }
 
   /**
-   * Updates the template list display
+   * Updates the template list display (only called when search changes)
    * @returns {void}
    * @private
    */
@@ -412,6 +412,29 @@ export class ModalManager {
       templateList.innerHTML = templateRenderer.renderTemplateList();
       this.setupTemplateItemListeners(this.eventController.signal);
       this.updateSelectionDisplay();
+    }
+  }
+
+  /**
+   * Updates only the template list content without affecting modal structure
+   * @returns {void}
+   * @private
+   */
+  updateTemplateListContent() {
+    const templateList = this.modalElement.querySelector(
+      ".prompter-template-list"
+    );
+    if (templateList) {
+      // Store current scroll position
+      const scrollTop = templateList.scrollTop;
+      
+      // Update content
+      templateList.innerHTML = templateRenderer.renderTemplateList();
+      this.setupTemplateItemListeners(this.eventController.signal);
+      this.updateSelectionDisplay();
+      
+      // Restore scroll position
+      templateList.scrollTop = scrollTop;
     }
   }
 
@@ -793,9 +816,8 @@ async function handleKeyboardModalImmediate(message) {
     const freshTemplates = await backgroundCommunicator.getTemplates();
     console.log(`📋 Got ${freshTemplates.length} fresh templates for modal`);
     
-    // Create and show modal with fresh templates
-    const modalManager = new ModalManager();
-    await modalManager.show({
+    // Use singleton modal manager to prevent duplicates
+    await globalModalManager.show({
       templates: freshTemplates,
       selectedText: selectionInfo.text,
       targetElement: targetElement,
@@ -804,9 +826,8 @@ async function handleKeyboardModalImmediate(message) {
   } catch (templatesError) {
     console.warn('⚠️ Failed to fetch fresh templates, using message templates:', templatesError);
     
-    // Fallback to templates from message
-    const modalManager = new ModalManager();
-    await modalManager.show({
+    // Fallback to templates from message using singleton
+    await globalModalManager.show({
       templates: message.templates || [],
       selectedText: selectionInfo.text,
       targetElement: targetElement,

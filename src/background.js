@@ -6,6 +6,7 @@ import {
   checkAuthStatus,
   debugStorageContents,
 } from "./chromeStorageAdapter.js";
+import { cacheManager } from "./cacheManager.js";
 
 // Context menu setup
 let userTemplates = [];
@@ -49,6 +50,13 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     }
   } else if (event === "SIGNED_OUT") {
     console.log("👋 Background: User signed out, clearing data");
+    
+    // Clear cache for the user before clearing currentUser
+    if (currentUser?.id) {
+      await cacheManager.invalidateUser(currentUser.id);
+      console.log("✅ Background: User cache cleared on sign out");
+    }
+    
     currentUser = null;
     userTemplates = [];
     promptrTemplates = [];
@@ -107,100 +115,13 @@ async function loadUserData() {
       return;
     }
 
-    // Load user's templates using API route (API will validate token and return user info)
+    // Load user's templates using cache manager with API fallback
     try {
-      console.log("📄 Background: Making API call to fetch templates");
+      console.log("📄 Background: Loading templates with cache...");
 
-      const url = API_CONFIG.getUrl("TEMPLATES");
-      const headers = API_CONFIG.getHeaders(accessToken);
-
-      console.log("📡 Background: Making API request:", {
-        url,
-        headers: {
-          ...headers,
-          Authorization: headers.Authorization
-            ? `Bearer [${headers.Authorization.substring(7, 20)}...]`
-            : "none",
-        },
-      });
-
-      const response = await fetch(url, {
-        method: "GET",
-        headers,
-      });
-
-      console.log("📡 Background: API response status:", response.status);
-      console.log(
-        "📡 Background: API response headers:",
-        Object.fromEntries(response.headers.entries())
-      );
-
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          console.log("❌ Background: Token invalid, clearing user data");
-          currentUser = null;
-          userTemplates = [];
-          await createContextMenuWithTemplates();
-          return;
-        }
-
-        const errorText = await response.text();
-        console.error("❌ Background: API error response:", errorText);
-        throw new Error(
-          `Failed to fetch templates: ${response.status} - ${errorText}`
-        );
-      }
-
-      // Check content-type before parsing JSON
-      const contentType = response.headers.get("content-type");
-      console.log("📡 Background: Response content-type:", contentType);
-
-      if (!contentType || !contentType.includes("application/json")) {
-        const responseText = await response.text();
-        console.error(
-          "❌ Background: Expected JSON but got:",
-          responseText.substring(0, 200)
-        );
-        throw new Error(
-          `Expected JSON response but got ${contentType}. Response: ${responseText.substring(
-            0,
-            100
-          )}...`
-        );
-      }
-
-      const templates = await response.json();
-      console.log(
-        "✅ Background: Successfully fetched templates:",
-        templates?.length || 0
-      );
-      console.log("📋 Background: Raw templates data:", templates);
-      if (templates && templates.length > 0) {
-        console.log(
-          "📋 Background: Template names:",
-          templates.map((t) => t.name)
-        );
-        console.log(
-          "📋 Background: Template IDs:",
-          templates.map((t) => t.id)
-        );
-      }
-      // Add source metadata to user templates for consistency
-      userTemplates = (templates || []).map((template) => ({
-        ...template,
-        source: "user",
-        ispromptrTemplate: false,
-      }));
-      console.log(
-        "📊 Background: userTemplates after assignment:",
-        userTemplates.length
-      );
-
-      // Since API call succeeded, get user info
+      // Get user info first
       try {
-        console.log(
-          "👤 Background: Getting user info after successful API call..."
-        );
+        console.log("👤 Background: Getting user info...");
         const {
           data: { user },
           error: userError,
@@ -223,23 +144,62 @@ async function loadUserData() {
         currentUser = null;
       }
 
+      const userId = currentUser?.id;
+      const url = API_CONFIG.getUrl("TEMPLATES");
+      const headers = API_CONFIG.getHeaders(accessToken);
+
+      // Use cache manager for conditional fetching
+      const { data: templates, fromCache } = await cacheManager.fetchWithCache(
+        url,
+        { method: "GET", headers },
+        "templates",
+        userId
+      );
+
+      console.log(
+        `📋 Background: User templates loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`,
+        templates?.length || 0
+      );
+
+      if (templates && templates.length > 0) {
+        console.log("📋 Background: User template names:", templates.map(t => t.name));
+      } else {
+        console.log("⚠️ Background: No user templates returned from API/cache");
+      }
+
+      // Add source metadata to user templates for consistency
+      userTemplates = (templates || []).map((template) => ({
+        ...template,
+        source: "user",
+        ispromptrTemplate: false,
+      }));
+
       // Load promptrTemplates after user templates are loaded
       await loadpromptrTemplates();
     } catch (error) {
-      console.error("❌ Background: Error fetching templates from API:", error);
+      console.error("❌ Background: Error loading user templates:", error);
 
-      if (error.message.includes("No authentication session found")) {
-        // Token was invalid, clear everything
+      // Handle authentication errors differently for user vs promptr templates
+      if (error.message.includes("No authentication session found") || 
+          error.message.includes("401")) {
+        // Only 401 (unauthorized) should clear everything, not 403 (forbidden)
+        console.log("❌ Background: Authentication failed, clearing user data");
         currentUser = null;
         userTemplates = [];
         await createContextMenuWithTemplates();
         return;
       }
 
+      // For 403 (forbidden) or other errors, user templates fail but try promptr templates
+      console.log("⚠️ Background: User templates failed (probably free tier), trying promptr templates");
       userTemplates = [];
 
-      // Even if user templates failed, try to load promptrTemplates
-      await loadpromptrTemplates();
+      // Always try to load promptrTemplates, even if user templates failed
+      try {
+        await loadpromptrTemplates();
+      } catch (promptrError) {
+        console.error("❌ Background: Promptr templates also failed:", promptrError);
+      }
     }
 
     console.log(
@@ -266,7 +226,7 @@ async function loadUserData() {
  */
 async function loadpromptrTemplates() {
   try {
-    console.log("🔄 Background: Loading promptrTemplates...");
+    console.log("🔄 Background: Loading promptrTemplates with cache...");
 
     const accessToken = await getStoredAccessToken();
     if (!accessToken) {
@@ -275,61 +235,38 @@ async function loadpromptrTemplates() {
       return;
     }
 
+    console.log("🔑 Background: Access token available for promptrTemplates");
+    console.log("👤 Background: Current user for promptrTemplates:", currentUser?.email || "no user");
+
+    const userId = currentUser?.id;
     const url = API_CONFIG.getUrl("PROMPTR_TEMPLATES");
     const headers = API_CONFIG.getHeaders(accessToken);
 
-    console.log("📡 Background: Making promptrTemplates API request:", {
+    console.log("🌐 Background: Making promptrTemplates request to:", url);
+    console.log("📋 Background: Request headers:", {
+      ...headers,
+      Authorization: headers.Authorization ? `Bearer [${headers.Authorization.substring(7, 20)}...]` : "none"
+    });
+
+    // Use cache manager for conditional fetching
+    const { data: templates, fromCache } = await cacheManager.fetchWithCache(
       url,
-      headers: {
-        ...headers,
-        Authorization: headers.Authorization
-          ? `Bearer [${headers.Authorization.substring(7, 20)}...]`
-          : "none",
-      },
-    });
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers,
-    });
-
-    console.log(
-      "📡 Background: promptrTemplates API response status:",
-      response.status
+      { method: "GET", headers },
+      "promptr_templates",
+      userId
     );
 
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        console.log("❌ Background: Token invalid for promptrTemplates");
-        promptrTemplates = [];
-        return;
-      }
-
-      const errorText = await response.text();
-      console.error("❌ Background: promptrTemplates API error:", errorText);
-      throw new Error(
-        `Failed to fetch promptrTemplates: ${response.status} - ${errorText}`
-      );
-    }
-
-    // Check content-type before parsing JSON
-    const contentType = response.headers.get("content-type");
-    if (!contentType || !contentType.includes("application/json")) {
-      const responseText = await response.text();
-      console.error(
-        "❌ Background: Expected JSON for promptrTemplates but got:",
-        responseText.substring(0, 200)
-      );
-      throw new Error(
-        `Expected JSON response for promptrTemplates but got ${contentType}`
-      );
-    }
-
-    const templates = await response.json();
     console.log(
-      "✅ Background: Successfully fetched promptrTemplates:",
+      `📋 Background: PromptrTemplates loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`,
       templates?.length || 0
     );
+
+    if (templates && templates.length > 0) {
+      console.log("📋 Background: PromptrTemplate names:", templates.map(t => t.name));
+      console.log("📋 Background: PromptrTemplate IDs:", templates.map(t => t.id));
+    } else {
+      console.log("⚠️ Background: No promptrTemplates returned from API/cache");
+    }
 
     // Add source metadata to each template
     promptrTemplates = (templates || []).map((template) => ({
@@ -343,7 +280,11 @@ async function loadpromptrTemplates() {
       promptrTemplates.length
     );
   } catch (error) {
-    console.error("❌ Background: Error fetching promptrTemplates:", error);
+    console.error("❌ Background: Error loading promptrTemplates:", error);
+    console.error("❌ Background: Error details:", {
+      message: error.message,
+      stack: error.stack?.substring(0, 200)
+    });
     promptrTemplates = [];
   }
 }
@@ -872,6 +813,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }, 1000);
         } else if (message.event === "SIGNED_OUT") {
           console.log("👋 Background: Processing sign-out from popup");
+          
+          // Clear cache for the user before clearing currentUser
+          if (currentUser?.id) {
+            await cacheManager.invalidateUser(currentUser.id);
+            console.log("✅ Background: User cache cleared on popup sign out");
+          }
+          
           currentUser = null;
           userTemplates = [];
           promptrTemplates = [];
@@ -896,14 +844,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     (async () => {
       try {
-        // Reload fresh templates from API
-        await loadUserData();
+        // Reload fresh templates from API - load both user and promptr templates
+        await loadUserData(); // This loads user templates and calls loadpromptrTemplates()
+        
+        // Ensure promptr templates are also fresh by calling explicitly
+        await loadpromptrTemplates();
         
         const allTemplates = getAllTemplates();
         console.log(
           "📋 Background: Returning",
           allTemplates.length,
-          "fresh templates to content script"
+          "fresh templates to content script (User:",
+          userTemplates.length,
+          "Promptr:",
+          promptrTemplates.length + ")"
         );
         sendResponse({
           success: true,

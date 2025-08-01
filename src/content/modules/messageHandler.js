@@ -4,6 +4,8 @@
  * @since 1.0.0
  */
 
+import { cacheManager } from "../../cacheManager.js";
+
 /**
  * Provides robust message passing with retry mechanisms
  * @class MessageHandler
@@ -487,38 +489,51 @@ export class BackgroundCommunicator {
   }
 
   /**
-   * Gets available templates with rate limiting protection
+   * Gets available templates with advanced caching and rate limiting
    * @param {boolean} forceRefresh - Force refresh even if within cooldown period
    * @returns {Promise<Array>} Templates array
    */
   async getTemplates(forceRefresh = false) {
-    const now = Date.now();
-    
-    // Check if we're within cooldown period and have cached templates
-    if (!forceRefresh && this.cachedTemplates && (now - this.lastTemplatesFetch < this.templatesFetchCooldown)) {
-      console.log(`📋 Using cached templates (${this.cachedTemplates.length}) - cooldown active`);
-      return this.cachedTemplates;
+    try {
+      const now = Date.now();
+      
+      // First check if we should use simple rate limiting fallback
+      if (!forceRefresh && this.cachedTemplates && (now - this.lastTemplatesFetch < this.templatesFetchCooldown)) {
+        console.log(`📋 Using in-memory cached templates (${this.cachedTemplates.length}) - cooldown active`);
+        return this.cachedTemplates;
+      }
+
+      console.log('📋 Requesting fresh templates through background script...');
+      this.lastTemplatesFetch = now;
+
+      // Use background script for template fetching (it handles caching internally now)
+      const response = await this.messageHandler.sendMessage({
+        action: 'GET_TEMPLATES'
+      }, {
+        timeout: 10000,
+        retries: 2 // Reduced retries since background script has caching
+      });
+
+      if (!Array.isArray(response.templates)) {
+        throw new Error("Invalid templates response");
+      }
+
+      // Keep local cache for rate limiting purposes
+      this.cachedTemplates = response.templates;
+      console.log(`📋 Templates received and cached locally (${this.cachedTemplates.length})`);
+
+      return response.templates;
+    } catch (error) {
+      console.warn('📋 Error fetching templates:', error);
+      
+      // Return stale local cache if available
+      if (this.cachedTemplates) {
+        console.log(`📋 Using stale local cache as fallback (${this.cachedTemplates.length})`);
+        return this.cachedTemplates;
+      }
+      
+      throw error;
     }
-
-    console.log('📋 Fetching fresh templates from API...');
-    this.lastTemplatesFetch = now;
-
-    const response = await this.messageHandler.sendMessage({
-      action: 'GET_TEMPLATES'
-    }, {
-      timeout: 10000,
-      retries: 3
-    });
-
-    if (!Array.isArray(response.templates)) {
-      throw new Error("Invalid templates response");
-    }
-
-    // Cache the templates for future use
-    this.cachedTemplates = response.templates;
-    console.log(`📋 Fresh templates cached (${this.cachedTemplates.length})`);
-
-    return response.templates;
   }
 
   /**
