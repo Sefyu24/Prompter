@@ -332,34 +332,152 @@ export class MessageHandler {
 }
 
 /**
- * Background script communication utilities
+ * Background script communication utilities with timeout-resistant messaging
  */
 export class BackgroundCommunicator {
   constructor(messageHandler) {
     this.messageHandler = messageHandler || new MessageHandler();
+    /** @type {Map<string, {resolve: Function, reject: Function, timeout: number}>} */
+    this.pendingFormatRequests = new Map();
   }
 
   /**
-   * Formats text using a template
+   * Formats text using a template with dual-channel communication to avoid timeouts
    * @param {string} templateId - Template ID
    * @param {string} selectedText - Text to format
    * @returns {Promise<string>} Formatted text
    */
   async formatText(templateId, selectedText) {
-    const response = await this.messageHandler.sendMessage({
-      action: 'formatWithTemplate',
-      templateId,
-      selectedText
-    }, {
-      timeout: 15000, // Longer timeout for API calls
-      retries: 2
-    });
+    const requestId = this.generateRequestId();
+    
+    try {
+      // Set up direct message listener for timeout-resistant communication
+      const directMessagePromise = this.setupDirectMessageListener(requestId);
+      
+      // Send the format request
+      const callbackPromise = this.messageHandler.sendMessage({
+        action: 'formatWithTemplate',
+        templateId,
+        selectedText,
+        requestId
+      }, {
+        timeout: 30000, // Increased timeout
+        retries: 1, // Reduced retries since we have direct messaging fallback
+        expectResponse: true
+      });
 
-    if (!response.formattedText) {
-      throw new Error("No formatted text received");
+      // Race between callback response and direct message
+      const response = await Promise.race([
+        callbackPromise.catch(error => {
+          console.warn("Callback failed, waiting for direct message:", error);
+          return directMessagePromise;
+        }),
+        directMessagePromise
+      ]);
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      if (!response.formattedText) {
+        throw new Error("No formatted text received");
+      }
+
+      return response.formattedText;
+    } finally {
+      // Clean up any pending request
+      this.pendingFormatRequests.delete(requestId);
+    }
+  }
+
+  /**
+   * Sets up a listener for direct messages from background script
+   * @param {string} requestId - Request ID to match responses
+   * @returns {Promise<Object>} Response from direct message
+   * @private
+   */
+  setupDirectMessageListener(requestId) {
+    return new Promise((resolve, reject) => {
+      this.pendingFormatRequests.set(requestId, { 
+        resolve, 
+        reject, 
+        timeout: setTimeout(() => {
+          this.pendingFormatRequests.delete(requestId);
+          reject(new Error("Request timed out after 30 seconds"));
+        }, 30000)
+      });
+    });
+  }
+
+  /**
+   * Handles direct messages from background script (formatComplete/formatError)
+   * @param {Object} message - Message from background script
+   * @returns {void}
+   */
+  handleDirectMessage(message) {
+    const { action, requestId } = message;
+    
+    if (!requestId) {
+      // Handle legacy messages without requestId for backward compatibility
+      if (action === 'formatComplete' || action === 'formatError') {
+        this.handleLegacyDirectMessage(message);
+      }
+      return;
     }
 
-    return response.formattedText;
+    const pendingRequest = this.pendingFormatRequests.get(requestId);
+    if (!pendingRequest) {
+      console.warn("Received response for unknown request:", requestId);
+      return;
+    }
+
+    // Clear timeout
+    clearTimeout(pendingRequest.timeout);
+    this.pendingFormatRequests.delete(requestId);
+
+    // Resolve or reject based on message type
+    if (action === 'formatComplete') {
+      pendingRequest.resolve({ formattedText: message.formattedText });
+    } else if (action === 'formatError') {
+      pendingRequest.reject(new Error(message.error));
+    }
+  }
+
+  /**
+   * Handles legacy direct messages without requestId (for backward compatibility)
+   * @param {Object} message - Legacy message
+   * @returns {void}
+   * @private
+   */
+  handleLegacyDirectMessage(message) {
+    // For legacy support, resolve the most recent request
+    const entries = Array.from(this.pendingFormatRequests.entries());
+    if (entries.length === 0) {
+      console.warn("Received legacy direct message but no pending requests");
+      return;
+    }
+
+    const [requestId, pendingRequest] = entries[entries.length - 1];
+    
+    // Clear timeout and remove request
+    clearTimeout(pendingRequest.timeout);
+    this.pendingFormatRequests.delete(requestId);
+
+    // Handle the message
+    if (message.action === 'formatComplete') {
+      pendingRequest.resolve({ formattedText: message.formattedText });
+    } else if (message.action === 'formatError') {
+      pendingRequest.reject(new Error(message.error));
+    }
+  }
+
+  /**
+   * Generates unique request ID
+   * @returns {string} Request ID
+   * @private
+   */
+  generateRequestId() {
+    return `fmt_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   }
 
   /**

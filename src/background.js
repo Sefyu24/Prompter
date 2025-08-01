@@ -1,10 +1,15 @@
 import { supabase } from "./supabase.js";
 import stringify from "json-stringify-pretty-compact";
 import { API_CONFIG } from "./config.js";
-import { getStoredAccessToken, checkAuthStatus, debugStorageContents } from "./chromeStorageAdapter.js";
+import {
+  getStoredAccessToken,
+  checkAuthStatus,
+  debugStorageContents,
+} from "./chromeStorageAdapter.js";
 
 // Context menu setup
 let userTemplates = [];
+let promptrTemplates = [];
 let currentUser = null;
 
 // Initialize context menu when extension loads
@@ -46,7 +51,8 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     console.log("👋 Background: User signed out, clearing data");
     currentUser = null;
     userTemplates = [];
-    
+    promptrTemplates = [];
+
     // Debug: Check what's actually in storage after sign out
     await debugStorageContents();
     await updateContextMenu();
@@ -73,7 +79,6 @@ chrome.runtime.onStartup.addListener(async () => {
   }, 500);
 });
 
-
 /**
  * Loads the current user's data and templates using Supabase automatic session management
  * @async
@@ -82,7 +87,7 @@ chrome.runtime.onStartup.addListener(async () => {
 async function loadUserData() {
   try {
     console.log("🔄 Background: Loading user data...");
-    
+
     // Debug: First check what's in storage
     const hasAuth = await checkAuthStatus();
     console.log("🔍 Background: Auth status check result:", hasAuth);
@@ -106,12 +111,17 @@ async function loadUserData() {
     try {
       console.log("📄 Background: Making API call to fetch templates");
 
-      const url = API_CONFIG.getUrl('TEMPLATES');
+      const url = API_CONFIG.getUrl("TEMPLATES");
       const headers = API_CONFIG.getHeaders(accessToken);
-      
+
       console.log("📡 Background: Making API request:", {
         url,
-        headers: { ...headers, Authorization: headers.Authorization ? `Bearer [${headers.Authorization.substring(7, 20)}...]` : 'none' }
+        headers: {
+          ...headers,
+          Authorization: headers.Authorization
+            ? `Bearer [${headers.Authorization.substring(7, 20)}...]`
+            : "none",
+        },
       });
 
       const response = await fetch(url, {
@@ -120,7 +130,10 @@ async function loadUserData() {
       });
 
       console.log("📡 Background: API response status:", response.status);
-      console.log("📡 Background: API response headers:", Object.fromEntries(response.headers.entries()));
+      console.log(
+        "📡 Background: API response headers:",
+        Object.fromEntries(response.headers.entries())
+      );
 
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
@@ -130,7 +143,7 @@ async function loadUserData() {
           await createContextMenuWithTemplates();
           return;
         }
-        
+
         const errorText = await response.text();
         console.error("❌ Background: API error response:", errorText);
         throw new Error(
@@ -139,13 +152,21 @@ async function loadUserData() {
       }
 
       // Check content-type before parsing JSON
-      const contentType = response.headers.get('content-type');
+      const contentType = response.headers.get("content-type");
       console.log("📡 Background: Response content-type:", contentType);
-      
-      if (!contentType || !contentType.includes('application/json')) {
+
+      if (!contentType || !contentType.includes("application/json")) {
         const responseText = await response.text();
-        console.error("❌ Background: Expected JSON but got:", responseText.substring(0, 200));
-        throw new Error(`Expected JSON response but got ${contentType}. Response: ${responseText.substring(0, 100)}...`);
+        console.error(
+          "❌ Background: Expected JSON but got:",
+          responseText.substring(0, 200)
+        );
+        throw new Error(
+          `Expected JSON response but got ${contentType}. Response: ${responseText.substring(
+            0,
+            100
+          )}...`
+        );
       }
 
       const templates = await response.json();
@@ -164,23 +185,36 @@ async function loadUserData() {
           templates.map((t) => t.id)
         );
       }
-      userTemplates = templates || [];
-      console.log("📊 Background: userTemplates after assignment:", userTemplates);
+      // Add source metadata to user templates for consistency
+      userTemplates = (templates || []).map((template) => ({
+        ...template,
+        source: "user",
+        ispromptrTemplate: false,
+      }));
+      console.log(
+        "📊 Background: userTemplates after assignment:",
+        userTemplates.length
+      );
 
       // Since API call succeeded, get user info
       try {
-        console.log("👤 Background: Getting user info after successful API call...");
+        console.log(
+          "👤 Background: Getting user info after successful API call..."
+        );
         const {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
-        
+
         if (userError) {
           console.warn("❌ Background: Could not get user info:", userError);
           currentUser = null;
         } else {
           currentUser = user;
-          console.log("✅ Background: Current user loaded:", user?.email || "no email");
+          console.log(
+            "✅ Background: Current user loaded:",
+            user?.email || "no email"
+          );
           // Migrate old history format if needed
           await migrateOldHistory(user.id);
         }
@@ -188,22 +222,32 @@ async function loadUserData() {
         console.warn("❌ Background: Error getting user info:", userInfoError);
         currentUser = null;
       }
-      
+
+      // Load promptrTemplates after user templates are loaded
+      await loadpromptrTemplates();
     } catch (error) {
       console.error("❌ Background: Error fetching templates from API:", error);
-      
-      if (error.message.includes('No authentication session found')) {
+
+      if (error.message.includes("No authentication session found")) {
         // Token was invalid, clear everything
         currentUser = null;
         userTemplates = [];
         await createContextMenuWithTemplates();
         return;
       }
-      
+
       userTemplates = [];
+
+      // Even if user templates failed, try to load promptrTemplates
+      await loadpromptrTemplates();
     }
 
-    console.log("📊 Background: Final template count:", userTemplates.length);
+    console.log(
+      "📊 Background: Final template counts - User:",
+      userTemplates.length,
+      "Promptr:",
+      promptrTemplates.length
+    );
 
     // Update context menu after loading templates
     await updateContextMenu();
@@ -214,6 +258,115 @@ async function loadUserData() {
     currentUser = null;
     await createContextMenuWithTemplates();
   }
+}
+
+/**
+ * Loads promptrTemplates from API
+ * @returns {Promise<void>}
+ */
+async function loadpromptrTemplates() {
+  try {
+    console.log("🔄 Background: Loading promptrTemplates...");
+
+    const accessToken = await getStoredAccessToken();
+    if (!accessToken) {
+      console.log("⚠️ Background: No access token for promptrTemplates");
+      promptrTemplates = [];
+      return;
+    }
+
+    const url = API_CONFIG.getUrl("PROMPTR_TEMPLATES");
+    const headers = API_CONFIG.getHeaders(accessToken);
+
+    console.log("📡 Background: Making promptrTemplates API request:", {
+      url,
+      headers: {
+        ...headers,
+        Authorization: headers.Authorization
+          ? `Bearer [${headers.Authorization.substring(7, 20)}...]`
+          : "none",
+      },
+    });
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+    });
+
+    console.log(
+      "📡 Background: promptrTemplates API response status:",
+      response.status
+    );
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        console.log("❌ Background: Token invalid for promptrTemplates");
+        promptrTemplates = [];
+        return;
+      }
+
+      const errorText = await response.text();
+      console.error("❌ Background: promptrTemplates API error:", errorText);
+      throw new Error(
+        `Failed to fetch promptrTemplates: ${response.status} - ${errorText}`
+      );
+    }
+
+    // Check content-type before parsing JSON
+    const contentType = response.headers.get("content-type");
+    if (!contentType || !contentType.includes("application/json")) {
+      const responseText = await response.text();
+      console.error(
+        "❌ Background: Expected JSON for promptrTemplates but got:",
+        responseText.substring(0, 200)
+      );
+      throw new Error(
+        `Expected JSON response for promptrTemplates but got ${contentType}`
+      );
+    }
+
+    const templates = await response.json();
+    console.log(
+      "✅ Background: Successfully fetched promptrTemplates:",
+      templates?.length || 0
+    );
+
+    // Add source metadata to each template
+    promptrTemplates = (templates || []).map((template) => ({
+      ...template,
+      source: "promptr",
+      ispromptrTemplate: true,
+    }));
+
+    console.log(
+      "📊 Background: promptrTemplates after assignment:",
+      promptrTemplates.length
+    );
+  } catch (error) {
+    console.error("❌ Background: Error fetching promptrTemplates:", error);
+    promptrTemplates = [];
+  }
+}
+
+/**
+ * Gets all templates (user + promptr) merged with proper ordering
+ * @returns {Array} Merged templates array
+ */
+function getAllTemplates() {
+  const merged = [
+    ...userTemplates, // User templates first
+    ...promptrTemplates, // promptrTemplates second
+  ];
+
+  console.log(
+    "📊 Background: getAllTemplates() - User:",
+    userTemplates.length,
+    "Promptr:",
+    promptrTemplates.length,
+    "Total:",
+    merged.length
+  );
+  return merged;
 }
 
 /**
@@ -260,7 +413,8 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "prompter-format") {
     console.log("Context menu clicked - opening modal");
     console.log("Current user:", currentUser?.email || "Not logged in");
-    console.log("Available templates:", userTemplates?.length || 0);
+    const allTemplates = getAllTemplates();
+    console.log("Available templates:", allTemplates.length);
 
     try {
       // Check if we have a stored access token
@@ -275,17 +429,19 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     // If templates appear to not be loaded, try reloading
-    if (!userTemplates || userTemplates.length === 0) {
+    if (allTemplates.length === 0) {
       console.log("Templates appear empty, attempting to reload...");
       try {
         await loadUserData();
-        console.log("Templates reloaded, count:", userTemplates?.length || 0);
+        const reloadedTemplates = getAllTemplates();
+        console.log("Templates reloaded, count:", reloadedTemplates.length);
       } catch (error) {
         console.error("Failed to reload templates:", error);
       }
 
       // Check again after reload
-      if (!userTemplates || userTemplates.length === 0) {
+      const finalTemplates = getAllTemplates();
+      if (finalTemplates.length === 0) {
         console.log("No templates available after reload");
         chrome.tabs.sendMessage(tab.id, {
           action: "showKeyboardModal",
@@ -295,12 +451,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       }
     }
 
-    console.log("Sending modal with templates:", userTemplates.map((t) => t.name));
+    const finalAllTemplates = getAllTemplates();
+    console.log(
+      "Sending modal with templates:",
+      finalAllTemplates.map((t) => t.name)
+    );
 
     // Send templates to content script to show modal
     chrome.tabs.sendMessage(tab.id, {
       action: "showKeyboardModal",
-      templates: userTemplates,
+      templates: finalAllTemplates,
       user: currentUser,
     });
   }
@@ -321,10 +481,13 @@ async function formatTextWithTemplate(text, template, user) {
 
     // Create an AbortController for timeout handling
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.REQUEST_TIMEOUT);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      API_CONFIG.REQUEST_TIMEOUT
+    );
 
     // Call your backend API with timeout
-    const response = await fetch(API_CONFIG.getUrl('FORMAT'), {
+    const response = await fetch(API_CONFIG.getUrl("FORMAT"), {
       method: "POST",
       headers: API_CONFIG.getHeaders(accessToken),
       body: JSON.stringify({
@@ -389,11 +552,15 @@ async function formatTextWithTemplate(text, template, user) {
     return formattedText;
   } catch (error) {
     console.error("Error calling backend API:", error);
-    
-    if (error.name === 'AbortError') {
-      throw new Error(`Request timed out after ${API_CONFIG.REQUEST_TIMEOUT / 1000} seconds. Please try again.`);
+
+    if (error.name === "AbortError") {
+      throw new Error(
+        `Request timed out after ${
+          API_CONFIG.REQUEST_TIMEOUT / 1000
+        } seconds. Please try again.`
+      );
     }
-    
+
     // Re-throw the error to be handled by the caller
     throw error;
   }
@@ -596,7 +763,8 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command === "format-prompt") {
     console.log("Format prompt command triggered");
     console.log("Current user:", currentUser?.email || "Not logged in");
-    console.log("Available templates:", userTemplates?.length || 0);
+    const allTemplates = getAllTemplates();
+    console.log("Available templates:", allTemplates.length);
 
     try {
       // Check if we have a stored access token
@@ -611,17 +779,14 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     }
 
     // Debug: Log the state before checking templates
+    console.log("Before template check - allTemplates:", allTemplates.length);
     console.log(
-      "Before template check - userTemplates:",
-      userTemplates?.length || 0
-    );
-    console.log(
-      "userTemplates array:",
-      userTemplates?.map((t) => t.name) || "empty"
+      "allTemplates array:",
+      allTemplates.map((t) => `${t.name} (${t.source})`) || "empty"
     );
 
     // If templates appear to not be loaded, this might be a race condition
-    if (!userTemplates || userTemplates.length === 0) {
+    if (allTemplates.length === 0) {
       console.log(
         "Templates appear empty - this shouldn't happen if extension loaded correctly"
       );
@@ -630,7 +795,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     }
 
     // Check if user has templates after loading
-    if (!userTemplates || userTemplates.length === 0) {
+    if (allTemplates.length === 0) {
       console.log(
         "⚠️ Templates missing, attempting to reload for user:",
         currentUser?.email
@@ -639,16 +804,15 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
       // Try to reload templates first
       try {
         await loadUserData();
-        console.log(
-          "🔄 Templates reloaded, count:",
-          userTemplates?.length || 0
-        );
+        const reloadedTemplates = getAllTemplates();
+        console.log("🔄 Templates reloaded, count:", reloadedTemplates.length);
       } catch (error) {
         console.error("❌ Failed to reload templates:", error);
       }
 
       // Check again after reload
-      if (!userTemplates || userTemplates.length === 0) {
+      const finalTemplates = getAllTemplates();
+      if (finalTemplates.length === 0) {
         console.log(
           "❌ No templates available after reload for user:",
           currentUser?.email
@@ -661,24 +825,25 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
       }
     }
 
+    const finalAllTemplates = getAllTemplates();
     console.log(
       "Sending modal with templates:",
-      userTemplates.map((t) => t.name)
+      finalAllTemplates.map((t) => `${t.name} (${t.source})`)
     );
 
     console.log("🔍 DEBUGGING showKeyboardModal message:", {
       action: "showKeyboardModal",
-      templatesCount: userTemplates?.length || 0,
+      templatesCount: finalAllTemplates.length,
       userEmail: currentUser?.email,
-      templateNames: userTemplates?.map((t) => t.name) || [],
-      hasTemplates: userTemplates && userTemplates.length > 0,
+      templateNames: finalAllTemplates.map((t) => `${t.name} (${t.source})`),
+      hasTemplates: finalAllTemplates.length > 0,
       tabId: tab.id,
     });
 
     // Send templates to content script to show modal
     chrome.tabs.sendMessage(tab.id, {
       action: "showKeyboardModal",
-      templates: userTemplates,
+      templates: finalAllTemplates,
       user: currentUser,
     });
   }
@@ -709,6 +874,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.log("👋 Background: Processing sign-out from popup");
           currentUser = null;
           userTemplates = [];
+          promptrTemplates = [];
           await updateContextMenu();
         }
         sendResponse({ success: true });
@@ -724,8 +890,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep message channel open for async response
   }
 
+  // Handle GET_TEMPLATES request from content script
+  if (message.action === "GET_TEMPLATES") {
+    console.log("📋 Background: Handling GET_TEMPLATES request");
+    try {
+      const allTemplates = getAllTemplates();
+      console.log(
+        "📋 Background: Returning",
+        allTemplates.length,
+        "templates to content script"
+      );
+      sendResponse({
+        success: true,
+        templates: allTemplates,
+      });
+    } catch (error) {
+      console.error("❌ Background: Error getting templates:", error);
+      sendResponse({
+        success: false,
+        error: error.message,
+        templates: [],
+      });
+    }
+    return false; // Synchronous response
+  }
+
   if (message.action === "formatWithTemplate") {
-    const { templateId, selectedText } = message;
+    const { templateId, selectedText, requestId } = message;
 
     console.log("Processing format request for template:", templateId);
 
@@ -775,8 +966,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             );
 
             // Find template name for history (fallback to ID if not found)
-            const templateName = userTemplates.find(t => t.id === templateId)?.name || templateId;
-            
+            const allTemplates = getAllTemplates();
+            const templateName =
+              allTemplates.find((t) => t.id === templateId)?.name || templateId;
+
             await saveToHistory(
               templateId,
               templateName,
@@ -792,36 +985,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         console.log("Sending formatted response");
-        
+
         // Send the result directly to the content script instead of using sendResponse
         // This avoids Chrome's message timeout issues
         chrome.tabs.sendMessage(sender.tab.id, {
           action: "formatComplete",
           formattedText: formattedText,
-          originalTemplateId: templateId
+          originalTemplateId: templateId,
+          requestId: requestId, // Include requestId for proper matching
         });
-        
+
         // Still try to send response in case the content script is waiting
         try {
           sendResponse({ formattedText });
         } catch (e) {
-          console.log("Response channel already closed, but formatting completed via direct message");
+          console.log(
+            "Response channel already closed, but formatting completed via direct message"
+          );
         }
       } catch (error) {
         console.error("Error formatting text from keyboard modal:", error);
         const errorMessage = error.message || "Failed to format text";
-        
+
         // Send error directly to content script
         chrome.tabs.sendMessage(sender.tab.id, {
           action: "formatError",
           error: errorMessage,
-          originalTemplateId: templateId
+          originalTemplateId: templateId,
+          requestId: requestId, // Include requestId for proper matching
         });
-        
+
         try {
           sendResponse({ error: errorMessage });
         } catch (e) {
-          console.log("Response channel already closed, but error sent via direct message");
+          console.log(
+            "Response channel already closed, but error sent via direct message"
+          );
         }
       }
     })();
@@ -889,31 +1088,31 @@ async function finishUserOAuth(url) {
 
     // Simply store the Supabase tokens directly - no need for custom endpoint
     console.log("🔐 Storing Supabase session directly...");
-    
+
     // We need to get user info from the token
     // The token is a JWT, we can decode it to get basic info
-    const tokenPayload = JSON.parse(atob(access_token.split('.')[1]));
-    
+    const tokenPayload = JSON.parse(atob(access_token.split(".")[1]));
+
     // Store session data directly in Chrome storage using the same format as Supabase adapter
-    const storageKey = 'sb-audlasqcnqqtfednxmdo-auth-token';
+    const storageKey = "sb-audlasqcnqqtfednxmdo-auth-token";
     const sessionToStore = {
       access_token,
       refresh_token,
       user: {
         id: tokenPayload.sub,
         email: tokenPayload.email,
-        user_metadata: tokenPayload.user_metadata || {}
+        user_metadata: tokenPayload.user_metadata || {},
       },
-      expires_at: tokenPayload.exp * 1000 // Convert to milliseconds
+      expires_at: tokenPayload.exp * 1000, // Convert to milliseconds
     };
 
     await chrome.storage.local.set({
-      [storageKey]: JSON.stringify(sessionToStore)
+      [storageKey]: JSON.stringify(sessionToStore),
     });
 
     console.log("💾 Supabase session stored in Chrome storage successfully");
     console.log("👤 User authenticated:", tokenPayload.email);
-    
+
     // Verify session is actually stored
     try {
       const testToken = await getStoredAccessToken();

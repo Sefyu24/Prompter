@@ -122,12 +122,15 @@ export class TemplateRenderer {
             <div class="prompter-template-name" title="${escapeHtml(
               template.name
             )}">
-              ${escapeHtml(template.name)}
+              ${this.renderSourceIndicator(template)}${escapeHtml(template.name)}
             </div>
-            <span class="prompter-type-badge prompter-type-${templateType.toLowerCase()}" 
-                  title="Template type: ${templateType}">
-              ${templateType.toUpperCase()}
-            </span>
+            <div class="prompter-template-badges">
+              ${this.renderSourceBadge(template)}
+              <span class="prompter-type-badge prompter-type-${templateType.toLowerCase()}" 
+                    title="Template type: ${templateType}">
+                ${templateType.toUpperCase()}
+              </span>
+            </div>
           </div>
           ${this.renderTemplateDescription(template)}
         </div>
@@ -171,6 +174,41 @@ export class TemplateRenderer {
   }
 
   /**
+   * Renders source indicator prefix for template name
+   * @param {Template} template - Template object
+   * @returns {string} HTML string for source indicator
+   * @private
+   */
+  renderSourceIndicator(template) {
+    if (template.source === 'promptr') {
+      return template.isFree === false ? '🔒 ' : '✨ ';
+    }
+    return ''; // No indicator for user templates
+  }
+
+  /**
+   * Renders source badge for template
+   * @param {Template} template - Template object
+   * @returns {string} HTML string for source badge
+   * @private
+   */
+  renderSourceBadge(template) {
+    if (template.source === 'promptr') {
+      const badgeClass = template.isFree === false ? 'prompter-source-badge-pro' : 'prompter-source-badge-free';
+      const badgeText = template.isFree === false ? 'PRO' : 'FREE';
+      const badgeTitle = template.isFree === false ? 'Pro template - requires Pro subscription' : 'Free promptr template';
+      
+      return `
+        <span class="prompter-source-badge ${badgeClass}" 
+              title="${badgeTitle}">
+          ${badgeText}
+        </span>
+      `;
+    }
+    return ''; // No badge for user templates
+  }
+
+  /**
    * Truncates text to specified length with ellipsis
    * @param {string} text - Text to truncate
    * @param {number} maxLength - Maximum length
@@ -208,6 +246,30 @@ export class TemplateRenderer {
     return `
       <div class="prompter-loading" role="status" aria-live="polite">
         <div>Formatting text...</div>
+      </div>
+    `;
+  }
+
+  /**
+   * Renders text replacement progress state
+   * @returns {string} HTML string for replacement progress
+   */
+  renderReplacementProgress() {
+    return `
+      <div class="prompter-loading" role="status" aria-live="polite">
+        <div>Replacing text...</div>
+      </div>
+    `;
+  }
+
+  /**
+   * Renders success state
+   * @returns {string} HTML string for success state
+   */
+  renderSuccessState() {
+    return `
+      <div class="prompter-success" role="status" aria-live="polite">
+        <div class="prompter-success-content">✅ Text replaced successfully!</div>
       </div>
     `;
   }

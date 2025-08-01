@@ -23,7 +23,6 @@ export default defineConfig(({ command, mode }) => {
         input: {
           popup: resolve(__dirname, 'popup.html'),
           background: resolve(__dirname, 'src/background.js'),
-          content: resolve(__dirname, 'src/content.js'),
         },
         output: {
           entryFileNames: '[name].js',

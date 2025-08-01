@@ -10,7 +10,7 @@ import { textReplacementManager } from "./modules/textReplacement.js";
 import { visualFeedbackManager } from "./modules/visualFeedback.js";
 import { handleKeyboardModal } from "./modules/modalManager.js";
 import { errorHandler } from "./modules/errorHandler.js";
-import { messageHandler } from "./modules/messageHandler.js";
+import { messageHandler, backgroundCommunicator } from "./modules/messageHandler.js";
 import { domSafetyManager } from "./modules/domSafety.js";
 import { ACTIONS, NOTIFICATION_TYPES } from "./constants.js";
 
@@ -88,6 +88,12 @@ async function handleMessage(message) {
 
     case ACTIONS.SHOW_KEYBOARD_MODAL:
       await handleKeyboardModal(message);
+      break;
+
+    case 'formatComplete':
+    case 'formatError':
+      // Handle timeout-resistant direct messages from background script
+      backgroundCommunicator.handleDirectMessage(message);
       break;
 
     default:

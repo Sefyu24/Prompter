@@ -453,7 +453,7 @@ export class ModalManager {
   }
 
   /**
-   * Processes template selection and formats text
+   * Processes template selection and formats text with enhanced visual feedback
    * @param {Template} template - Selected template
    * @returns {Promise<void>}
    * @private
@@ -470,11 +470,14 @@ export class ModalManager {
         throw new Error(response.error);
       }
 
+      // Show text replacement progress
+      this.showReplacementProgress();
+
       // Replace text with formatted result
       await this.replaceTextWithResult(response.formattedText);
 
-      // Close modal
-      await this.close();
+      // Show success state and close modal after delay
+      this.showSuccessAndClose();
     } catch (error) {
       console.error("Template selection failed:", error);
       visualFeedbackManager.showError(error.message || "Failed to format text");
@@ -536,6 +539,39 @@ export class ModalManager {
     if (templateList) {
       templateList.innerHTML = templateRenderer.renderLoadingState();
     }
+  }
+
+  /**
+   * Shows text replacement progress in modal
+   * @returns {void}
+   * @private
+   */
+  showReplacementProgress() {
+    const templateList = this.modalElement.querySelector(
+      ".prompter-template-list"
+    );
+    if (templateList) {
+      templateList.innerHTML = templateRenderer.renderReplacementProgress();
+    }
+  }
+
+  /**
+   * Shows success state and closes modal after delay
+   * @returns {void}
+   * @private
+   */
+  showSuccessAndClose() {
+    const templateList = this.modalElement.querySelector(
+      ".prompter-template-list"
+    );
+    if (templateList) {
+      templateList.innerHTML = templateRenderer.renderSuccessState();
+    }
+
+    // Wait for user to see success message, then close
+    setTimeout(() => {
+      this.close();
+    }, 600);
   }
 
   /**

@@ -101,39 +101,6 @@ async function buildContentScript() {
   }
 }
 
-/**
- * Build legacy content script for compatibility
- */
-async function buildLegacyContentScript() {
-  const legacyConfig = {
-    ...buildConfig,
-    entryPoints: [join(srcDir, "content.js")],
-    outfile: join(distDir, "content-legacy.js"),
-    banner: {
-      js: `// Prompter Extension - Legacy Content Script
-// Generated: ${new Date().toISOString()}
-// Note: This is the original monolithic file for compatibility`,
-    },
-  };
-
-  try {
-    console.log("🔨 Building legacy content script...");
-
-    const result = await build(legacyConfig);
-
-    if (result.errors.length > 0) {
-      console.error("❌ Legacy build failed:", result.errors);
-      return;
-    }
-
-    console.log("✅ Legacy content script built successfully!");
-  } catch (error) {
-    console.warn(
-      "⚠️ Legacy build failed (this is expected if not using legacy mode):",
-      error.message
-    );
-  }
-}
 
 /**
  * Main build function
@@ -148,7 +115,6 @@ async function main() {
   console.log("");
 
   await buildContentScript();
-  await buildLegacyContentScript();
 
   const endTime = Date.now();
   const duration = endTime - startTime;

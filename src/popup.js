@@ -532,13 +532,30 @@ document.addEventListener("DOMContentLoaded", async function () {
         const templateType =
           template.templateType || template.template_type || "json";
         const badgeClass = `template-type-badge template-type-${templateType}`;
+        const sourceIndicator = template.source === 'promptr' 
+          ? (template.isFree === false ? '🔒 ' : '✨ ') 
+          : '';
+        
+        const sourceBadge = template.source === 'promptr'
+          ? `<span class="text-[10px] font-semibold px-2 py-1 rounded text-white ${
+              template.isFree === false 
+                ? 'bg-purple-600' 
+                : 'bg-green-600'
+            }" title="${template.isFree === false ? 'Pro template - requires Pro subscription' : 'Free promptr template'}">
+              ${template.isFree === false ? 'PRO' : 'FREE'}
+            </span>`
+          : '';
+
         return `
         <div class="bg-background border border-border rounded-md p-3 mb-[10px] cursor-pointer transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-template-id="${
           template.id
         }">
           <div class="flex items-center justify-between mb-1">
-            <div class="font-medium text-foreground">${template.name}</div>
-            <span class="${badgeClass}">${templateType.toUpperCase()}</span>
+            <div class="font-medium text-foreground">${sourceIndicator}${template.name}</div>
+            <div class="flex items-center gap-2">
+              ${sourceBadge}
+              <span class="${badgeClass}">${templateType.toUpperCase()}</span>
+            </div>
           </div>
           ${
             template.description

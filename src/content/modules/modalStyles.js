@@ -252,6 +252,31 @@ export class ModalStyleManager {
         font-size: 14px;
       }
 
+      .prompter-template-badges {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .prompter-source-badge {
+        font-size: 10px;
+        font-weight: 600;
+        padding: 2px 6px;
+        border-radius: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .prompter-source-badge-free {
+        background: oklch(0.5568 0.2294 142.495 / 0.15);
+        color: oklch(0.5568 0.2294 142.495);
+      }
+
+      .prompter-source-badge-pro {
+        background: oklch(0.5393 0.2713 286.7462 / 0.15);
+        color: oklch(0.5393 0.2713 286.7462);
+      }
+
       .prompter-template-description {
         font-size: 13px;
         color: oklch(0.4386 0 0);
@@ -360,6 +385,22 @@ export class ModalStyleManager {
         border-radius: 50%;
         animation: prompter-loading-spin 1s linear infinite;
       }
+
+      .prompter-success {
+        text-align: center;
+        padding: 20px;
+        color: oklch(0.5568 0.2294 142.495);
+        font-size: 14px;
+        font-weight: 500;
+        animation: prompter-success-fade-in 0.3s ease-out;
+      }
+
+      .prompter-success-content {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
     `;
   }
 
@@ -395,6 +436,17 @@ export class ModalStyleManager {
       @keyframes prompter-loading-spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
+      }
+
+      @keyframes prompter-success-fade-in {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
 
       @keyframes prompter-pulse {
