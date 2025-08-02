@@ -11,6 +11,8 @@
     "type": "module"
   },
 
+  "host_permissions": ["https://promptr.one/*", "https://*.promptr.one/*"],
+
   "content_scripts": [
     {
       "matches": [

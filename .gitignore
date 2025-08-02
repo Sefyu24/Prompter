@@ -146,3 +146,6 @@ yarn-error.log
 
 # End of https://www.gitignore.io/api/node,vuejs,macos
 
+# Extension assets
+src/assets/logos/
+
