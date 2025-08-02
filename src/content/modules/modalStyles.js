@@ -1,6 +1,6 @@
 /**
  * @fileoverview Modal styling module - handles all CSS for modal components
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 

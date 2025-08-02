@@ -1,6 +1,6 @@
 /**
  * @fileoverview Keyboard handling module for modal navigation and shortcuts
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 

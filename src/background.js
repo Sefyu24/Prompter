@@ -1,6 +1,6 @@
 import { supabase } from "./supabase.js";
 import stringify from "json-stringify-pretty-compact";
-import { API_CONFIG } from "./config.js";
+import { API_CONFIG, ENV_CONFIG, DEV_UTILS } from "./config.js";
 import {
   getStoredAccessToken,
   checkAuthStatus,
@@ -15,7 +15,7 @@ let currentUser = null;
 
 // Initialize context menu when extension loads
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log("🚀 Background: Extension installed/loaded");
+  DEV_UTILS.log("Extension installed/loaded");
 
   // Add delay to allow storage adapter to initialize properly
   setTimeout(async () => {
@@ -26,35 +26,24 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 // Listen for Supabase auth state changes
 supabase.auth.onAuthStateChange(async (event, session) => {
-  console.log(
-    "🔔 Background: Supabase auth state changed:",
-    event,
-    "User:",
-    session?.user?.email || "no user"
-  );
+  DEV_UTILS.log("Supabase auth state changed:", event, "User:", session?.user?.email || "no user");
 
   if (event === "SIGNED_IN" && session) {
-    console.log(
-      "✅ Background: User signed in, reloading data for:",
-      session.user?.email
-    );
+    DEV_UTILS.log("User signed in, reloading data for:", session.user?.email);
     try {
       await loadUserData();
       await updateContextMenu();
-      console.log("✅ Background: Post-signin data load completed");
+      DEV_UTILS.log("Post-signin data load completed");
     } catch (error) {
-      console.error(
-        "❌ Background: Error during post-signin data load:",
-        error
-      );
+      console.error("Error during post-signin data load:", error);
     }
   } else if (event === "SIGNED_OUT") {
-    console.log("👋 Background: User signed out, clearing data");
+    DEV_UTILS.log("User signed out, clearing data");
     
     // Clear cache for the user before clearing currentUser
     if (currentUser?.id) {
       await cacheManager.invalidateUser(currentUser.id);
-      console.log("✅ Background: User cache cleared on sign out");
+      DEV_UTILS.log("User cache cleared on sign out");
     }
     
     currentUser = null;
@@ -62,22 +51,22 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     promptrTemplates = [];
 
     // Debug: Check what's actually in storage after sign out
-    await debugStorageContents();
+    if (ENV_CONFIG.IS_DEVELOPMENT) {
+      const debugData = await debugStorageContents();
+      DEV_UTILS.log('Debug storage contents:', Object.keys(debugData));
+    }
     await updateContextMenu();
   } else if (event === "TOKEN_REFRESHED" && session) {
-    console.log(
-      "🔄 Background: Token refreshed for user:",
-      session.user?.email
-    );
+    DEV_UTILS.log("Token refreshed for user:", session.user?.email);
     currentUser = session.user;
   } else {
-    console.log("ℹ️ Background: Other auth event:", event);
+    DEV_UTILS.log("Other auth event:", event);
   }
 });
 
 // Load user data on startup
 chrome.runtime.onStartup.addListener(async () => {
-  console.log("🚀 Background: Extension startup detected");
+  DEV_UTILS.log("Extension startup detected");
 
   // Add delay to ensure storage adapter is ready
   setTimeout(async () => {
@@ -94,21 +83,24 @@ chrome.runtime.onStartup.addListener(async () => {
  */
 async function loadUserData() {
   try {
-    console.log("🔄 Background: Loading user data...");
+    DEV_UTILS.log("Loading user data...");
 
     // Debug: First check what's in storage
     const hasAuth = await checkAuthStatus();
-    console.log("🔍 Background: Auth status check result:", hasAuth);
+    DEV_UTILS.log("Auth status check result:", hasAuth);
 
     // Get stored access token directly
     let accessToken;
     try {
       accessToken = await getStoredAccessToken();
-      console.log("✅ Background: Access token retrieved successfully");
+      DEV_UTILS.log("Access token retrieved successfully");
     } catch (tokenError) {
-      console.log("⚠️ Background: No access token found:", tokenError.message);
+      DEV_UTILS.log("No access token found:", tokenError.message);
       // Debug: Show storage contents when token retrieval fails
-      await debugStorageContents();
+      if (ENV_CONFIG.IS_DEVELOPMENT) {
+        const debugData = await debugStorageContents();
+        DEV_UTILS.log('Debug storage contents:', Object.keys(debugData));
+      }
       currentUser = null;
       userTemplates = [];
       await createContextMenuWithTemplates();
@@ -117,30 +109,27 @@ async function loadUserData() {
 
     // Load user's templates using cache manager with API fallback
     try {
-      console.log("📄 Background: Loading templates with cache...");
+      DEV_UTILS.log("Loading templates with cache...");
 
       // Get user info first
       try {
-        console.log("👤 Background: Getting user info...");
+        DEV_UTILS.log("Getting user info...");
         const {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
 
         if (userError) {
-          console.warn("❌ Background: Could not get user info:", userError);
+          console.error("Could not get user info:", userError);
           currentUser = null;
         } else {
           currentUser = user;
-          console.log(
-            "✅ Background: Current user loaded:",
-            user?.email || "no email"
-          );
+          DEV_UTILS.log("Current user loaded:", user?.email || "no email");
           // Migrate old history format if needed
           await migrateOldHistory(user.id);
         }
       } catch (userInfoError) {
-        console.warn("❌ Background: Error getting user info:", userInfoError);
+        console.error("Error getting user info:", userInfoError);
         currentUser = null;
       }
 
@@ -156,15 +145,15 @@ async function loadUserData() {
         userId
       );
 
-      console.log(
-        `📋 Background: User templates loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`,
+      DEV_UTILS.log(
+        `User templates loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`,
         templates?.length || 0
       );
 
       if (templates && templates.length > 0) {
-        console.log("📋 Background: User template names:", templates.map(t => t.name));
+        DEV_UTILS.log("User template names:", templates.map(t => t.name));
       } else {
-        console.log("⚠️ Background: No user templates returned from API/cache");
+        DEV_UTILS.log("No user templates returned from API/cache");
       }
 
       // Add source metadata to user templates for consistency
@@ -177,13 +166,13 @@ async function loadUserData() {
       // Load promptrTemplates after user templates are loaded
       await loadpromptrTemplates();
     } catch (error) {
-      console.error("❌ Background: Error loading user templates:", error);
+      console.error("Error loading user templates:", error);
 
       // Handle authentication errors differently for user vs promptr templates
       if (error.message.includes("No authentication session found") || 
           error.message.includes("401")) {
         // Only 401 (unauthorized) should clear everything, not 403 (forbidden)
-        console.log("❌ Background: Authentication failed, clearing user data");
+        DEV_UTILS.log("Authentication failed, clearing user data");
         currentUser = null;
         userTemplates = [];
         await createContextMenuWithTemplates();
@@ -191,19 +180,19 @@ async function loadUserData() {
       }
 
       // For 403 (forbidden) or other errors, user templates fail but try promptr templates
-      console.log("⚠️ Background: User templates failed (probably free tier), trying promptr templates");
+      DEV_UTILS.log("User templates failed (probably free tier), trying promptr templates");
       userTemplates = [];
 
       // Always try to load promptrTemplates, even if user templates failed
       try {
         await loadpromptrTemplates();
       } catch (promptrError) {
-        console.error("❌ Background: Promptr templates also failed:", promptrError);
+        console.error("Promptr templates also failed:", promptrError);
       }
     }
 
-    console.log(
-      "📊 Background: Final template counts - User:",
+    DEV_UTILS.log(
+      "Final template counts - User:",
       userTemplates.length,
       "Promptr:",
       promptrTemplates.length
@@ -212,7 +201,7 @@ async function loadUserData() {
     // Update context menu after loading templates
     await updateContextMenu();
   } catch (error) {
-    console.error("❌ Background: Error loading user data:", error);
+    console.error("Error loading user data:", error);
     // Fallback: create context menu without templates
     userTemplates = [];
     currentUser = null;
@@ -226,24 +215,24 @@ async function loadUserData() {
  */
 async function loadpromptrTemplates() {
   try {
-    console.log("🔄 Background: Loading promptrTemplates with cache...");
+    DEV_UTILS.log("Loading promptrTemplates with cache...");
 
     const accessToken = await getStoredAccessToken();
     if (!accessToken) {
-      console.log("⚠️ Background: No access token for promptrTemplates");
+      DEV_UTILS.log("No access token for promptrTemplates");
       promptrTemplates = [];
       return;
     }
 
-    console.log("🔑 Background: Access token available for promptrTemplates");
-    console.log("👤 Background: Current user for promptrTemplates:", currentUser?.email || "no user");
+    DEV_UTILS.log("Access token available for promptrTemplates");
+    DEV_UTILS.log("Current user for promptrTemplates:", currentUser?.email || "no user");
 
     const userId = currentUser?.id;
     const url = API_CONFIG.getUrl("PROMPTR_TEMPLATES");
     const headers = API_CONFIG.getHeaders(accessToken);
 
-    console.log("🌐 Background: Making promptrTemplates request to:", url);
-    console.log("📋 Background: Request headers:", {
+    DEV_UTILS.log("Making promptrTemplates request to:", url);
+    DEV_UTILS.log("Request headers:", {
       ...headers,
       Authorization: headers.Authorization ? `Bearer [${headers.Authorization.substring(7, 20)}...]` : "none"
     });
@@ -256,16 +245,16 @@ async function loadpromptrTemplates() {
       userId
     );
 
-    console.log(
-      `📋 Background: PromptrTemplates loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`,
+    DEV_UTILS.log(
+      `PromptrTemplates loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`,
       templates?.length || 0
     );
 
     if (templates && templates.length > 0) {
-      console.log("📋 Background: PromptrTemplate names:", templates.map(t => t.name));
-      console.log("📋 Background: PromptrTemplate IDs:", templates.map(t => t.id));
+      DEV_UTILS.log("PromptrTemplate names:", templates.map(t => t.name));
+      DEV_UTILS.log("PromptrTemplate IDs:", templates.map(t => t.id));
     } else {
-      console.log("⚠️ Background: No promptrTemplates returned from API/cache");
+      DEV_UTILS.log("No promptrTemplates returned from API/cache");
     }
 
     // Add source metadata to each template
@@ -275,16 +264,18 @@ async function loadpromptrTemplates() {
       ispromptrTemplate: true,
     }));
 
-    console.log(
-      "📊 Background: promptrTemplates after assignment:",
+    DEV_UTILS.log(
+      "promptrTemplates after assignment:",
       promptrTemplates.length
     );
   } catch (error) {
-    console.error("❌ Background: Error loading promptrTemplates:", error);
-    console.error("❌ Background: Error details:", {
-      message: error.message,
-      stack: error.stack?.substring(0, 200)
-    });
+    console.error("Error loading promptrTemplates:", error);
+    if (ENV_CONFIG.IS_DEVELOPMENT) {
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack?.substring(0, 200)
+      });
+    }
     promptrTemplates = [];
   }
 }
@@ -299,8 +290,8 @@ function getAllTemplates() {
     ...promptrTemplates, // promptrTemplates second
   ];
 
-  console.log(
-    "📊 Background: getAllTemplates() - User:",
+  DEV_UTILS.log(
+    "getAllTemplates() - User:",
     userTemplates.length,
     "Promptr:",
     promptrTemplates.length,
@@ -322,7 +313,7 @@ async function createContextMenuWithTemplates() {
       chrome.contextMenus.create(
         {
           id: "prompter-format",
-          title: "Prompter",
+          title: "Promptr",
           contexts: ["selection"],
         },
         resolve
@@ -352,16 +343,16 @@ async function updateContextMenu() {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "prompter-format") {
-    console.log("Context menu clicked - opening modal");
-    console.log("Current user:", currentUser?.email || "Not logged in");
+    DEV_UTILS.log("Context menu clicked - opening modal");
+    DEV_UTILS.log("Current user:", currentUser?.email || "Not logged in");
     const allTemplates = getAllTemplates();
-    console.log("Available templates:", allTemplates.length);
+    DEV_UTILS.log("Available templates:", allTemplates.length);
 
     try {
       // Check if we have a stored access token
       await getStoredAccessToken();
     } catch (error) {
-      console.log("No access token found, cannot show modal");
+      DEV_UTILS.log("No access token found, cannot show modal");
       chrome.tabs.sendMessage(tab.id, {
         action: "showKeyboardModal",
         error: "You need to be authenticated first",
@@ -371,11 +362,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
     // If templates appear to not be loaded, try reloading
     if (allTemplates.length === 0) {
-      console.log("Templates appear empty, attempting to reload...");
+      DEV_UTILS.log("Templates appear empty, attempting to reload...");
       try {
         await loadUserData();
         const reloadedTemplates = getAllTemplates();
-        console.log("Templates reloaded, count:", reloadedTemplates.length);
+        DEV_UTILS.log("Templates reloaded, count:", reloadedTemplates.length);
       } catch (error) {
         console.error("Failed to reload templates:", error);
       }
@@ -383,7 +374,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       // Check again after reload
       const finalTemplates = getAllTemplates();
       if (finalTemplates.length === 0) {
-        console.log("No templates available after reload");
+        DEV_UTILS.log("No templates available after reload");
         chrome.tabs.sendMessage(tab.id, {
           action: "showKeyboardModal",
           error: "No templates available. Please create templates first.",
@@ -393,7 +384,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
 
     const finalAllTemplates = getAllTemplates();
-    console.log(
+    DEV_UTILS.log(
       "Sending modal with templates:",
       finalAllTemplates.map((t) => t.name)
     );
@@ -468,7 +459,7 @@ async function formatTextWithTemplate(text, template, user) {
             maxLength: 80,
             indent: 2,
           });
-          console.log("JSON formatted successfully");
+          DEV_UTILS.log("JSON formatted successfully");
         }
       } else if (templateType === "xml") {
         // Basic XML formatting - add proper indentation if needed
@@ -477,14 +468,14 @@ async function formatTextWithTemplate(text, template, user) {
           formattedText = formattedText
             .replace(/></g, ">\n<")
             .replace(/^\s+|\s+$/g, "");
-          console.log("XML formatted successfully");
+          DEV_UTILS.log("XML formatted successfully");
         }
       } else if (templateType === "markdown") {
         // Markdown doesn't need special formatting, keep as-is
-        console.log("Markdown template - no additional formatting needed");
+        DEV_UTILS.log("Markdown template - no additional formatting needed");
       }
     } catch (formatError) {
-      console.log(
+      DEV_UTILS.log(
         "Format-specific processing failed, returning as-is:",
         formatError
       );
@@ -531,7 +522,7 @@ async function trackFormattingRequest(
     });
 
     if (error) throw error;
-    console.log("Tracked formatting request");
+    DEV_UTILS.log("Tracked formatting request");
   } catch (error) {
     console.error("Error tracking request:", error);
   }
@@ -590,7 +581,7 @@ async function saveToHistory(
     // Save back to storage with user-specific key
     await chrome.storage.local.set({ [historyKey]: limitedHistory });
 
-    console.log(
+    DEV_UTILS.log(
       "Saved to user history:",
       historyItem.templateName,
       "for user:",
@@ -617,7 +608,7 @@ async function clearHistory(userId = null) {
 
     const historyKey = `formatting_history_${targetUserId}`;
     await chrome.storage.local.remove([historyKey]);
-    console.log("History cleared for user:", targetUserId);
+    DEV_UTILS.log("History cleared for user:", targetUserId);
   } catch (error) {
     console.error("Error clearing history:", error);
   }
@@ -661,7 +652,7 @@ async function migrateOldHistory(userId) {
     ]);
     if (!oldHistory || oldHistory.length === 0) return;
 
-    console.log(
+    DEV_UTILS.log(
       "Migrating old history to user-specific format for user:",
       userId
     );
@@ -672,7 +663,7 @@ async function migrateOldHistory(userId) {
       await chrome.storage.local.get([userHistoryKey]);
 
     if (existingUserHistory && existingUserHistory.length > 0) {
-      console.log("User already has history, skipping migration");
+      DEV_UTILS.log("User already has history, skipping migration");
       // Remove old history since it's no longer needed
       await chrome.storage.local.remove(["formatting_history"]);
       return;
@@ -690,7 +681,7 @@ async function migrateOldHistory(userId) {
     // Remove old history
     await chrome.storage.local.remove(["formatting_history"]);
 
-    console.log(
+    DEV_UTILS.log(
       `Migrated ${migratedHistory.length} history items for user:`,
       userId
     );
@@ -702,16 +693,16 @@ async function migrateOldHistory(userId) {
 // Handle keyboard shortcut commands
 chrome.commands.onCommand.addListener(async (command, tab) => {
   if (command === "format-prompt") {
-    console.log("Format prompt command triggered");
-    console.log("Current user:", currentUser?.email || "Not logged in");
+    DEV_UTILS.log("Format prompt command triggered");
+    DEV_UTILS.log("Current user:", currentUser?.email || "Not logged in");
     const allTemplates = getAllTemplates();
-    console.log("Available templates:", allTemplates.length);
+    DEV_UTILS.log("Available templates:", allTemplates.length);
 
     try {
       // Check if we have a stored access token
       await getStoredAccessToken();
     } catch (error) {
-      console.log("No access token found, cannot show modal");
+      DEV_UTILS.log("No access token found, cannot show modal");
       chrome.tabs.sendMessage(tab.id, {
         action: "showKeyboardModal",
         error: "You need to be authenticated first",
@@ -720,25 +711,25 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     }
 
     // Debug: Log the state before checking templates
-    console.log("Before template check - allTemplates:", allTemplates.length);
-    console.log(
+    DEV_UTILS.log("Before template check - allTemplates:", allTemplates.length);
+    DEV_UTILS.log(
       "allTemplates array:",
       allTemplates.map((t) => `${t.name} (${t.source})`) || "empty"
     );
 
     // If templates appear to not be loaded, this might be a race condition
     if (allTemplates.length === 0) {
-      console.log(
+      DEV_UTILS.log(
         "Templates appear empty - this shouldn't happen if extension loaded correctly"
       );
-      console.log("Skipping template reload to avoid 401 error");
+      DEV_UTILS.log("Skipping template reload to avoid 401 error");
       // Don't call loadUserData() here as it causes 401 error
     }
 
     // Check if user has templates after loading
     if (allTemplates.length === 0) {
-      console.log(
-        "⚠️ Templates missing, attempting to reload for user:",
+      DEV_UTILS.log(
+        "Templates missing, attempting to reload for user:",
         currentUser?.email
       );
 
@@ -746,16 +737,16 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
       try {
         await loadUserData();
         const reloadedTemplates = getAllTemplates();
-        console.log("🔄 Templates reloaded, count:", reloadedTemplates.length);
+        DEV_UTILS.log("Templates reloaded, count:", reloadedTemplates.length);
       } catch (error) {
-        console.error("❌ Failed to reload templates:", error);
+        console.error("Failed to reload templates:", error);
       }
 
       // Check again after reload
       const finalTemplates = getAllTemplates();
       if (finalTemplates.length === 0) {
-        console.log(
-          "❌ No templates available after reload for user:",
+        DEV_UTILS.log(
+          "No templates available after reload for user:",
           currentUser?.email
         );
         chrome.tabs.sendMessage(tab.id, {
@@ -767,19 +758,21 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
     }
 
     const finalAllTemplates = getAllTemplates();
-    console.log(
+    DEV_UTILS.log(
       "Sending modal with templates:",
       finalAllTemplates.map((t) => `${t.name} (${t.source})`)
     );
 
-    console.log("🔍 DEBUGGING showKeyboardModal message:", {
-      action: "showKeyboardModal",
-      templatesCount: finalAllTemplates.length,
-      userEmail: currentUser?.email,
-      templateNames: finalAllTemplates.map((t) => `${t.name} (${t.source})`),
-      hasTemplates: finalAllTemplates.length > 0,
-      tabId: tab.id,
-    });
+    if (ENV_CONFIG.IS_DEVELOPMENT) {
+      console.log("DEBUGGING showKeyboardModal message:", {
+        action: "showKeyboardModal",
+        templatesCount: finalAllTemplates.length,
+        userEmail: currentUser?.email,
+        templateNames: finalAllTemplates.map((t) => `${t.name} (${t.source})`),
+        hasTemplates: finalAllTemplates.length > 0,
+        tabId: tab.id,
+      });
+    }
 
     // Send templates to content script to show modal
     chrome.tabs.sendMessage(tab.id, {
@@ -792,32 +785,32 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
 // Handle messages from content script (including keyboard modal selections)
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log("Background received message:", message.action || message.type);
+  DEV_UTILS.log("Background received message:", message.action || message.type);
 
   // Handle auth state changes from popup
   if (message.type === "AUTH_STATE_CHANGED") {
-    console.log(
-      "🔔 Background: Received auth state change from popup:",
+    DEV_UTILS.log(
+      "Received auth state change from popup:",
       message.event
     );
 
     (async () => {
       try {
         if (message.event === "SIGNED_IN" && message.session) {
-          console.log("✅ Background: Processing sign-in from popup");
+          DEV_UTILS.log("Processing sign-in from popup");
           // Wait a moment for Supabase to process the session
           setTimeout(async () => {
             await loadUserData();
             await updateContextMenu();
-            console.log("✅ Background: Auth sync from popup completed");
+            DEV_UTILS.log("Auth sync from popup completed");
           }, 1000);
         } else if (message.event === "SIGNED_OUT") {
-          console.log("👋 Background: Processing sign-out from popup");
+          DEV_UTILS.log("Processing sign-out from popup");
           
           // Clear cache for the user before clearing currentUser
           if (currentUser?.id) {
             await cacheManager.invalidateUser(currentUser.id);
-            console.log("✅ Background: User cache cleared on popup sign out");
+            DEV_UTILS.log("User cache cleared on popup sign out");
           }
           
           currentUser = null;
@@ -840,7 +833,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // Handle GET_TEMPLATES request from content script
   if (message.action === "GET_TEMPLATES") {
-    console.log("📋 Background: Handling GET_TEMPLATES request - fetching fresh templates");
+    DEV_UTILS.log("Handling GET_TEMPLATES request - fetching fresh templates");
     
     (async () => {
       try {
@@ -851,8 +844,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await loadpromptrTemplates();
         
         const allTemplates = getAllTemplates();
-        console.log(
-          "📋 Background: Returning",
+        DEV_UTILS.log(
+          "Returning",
           allTemplates.length,
           "fresh templates to content script (User:",
           userTemplates.length,
@@ -864,11 +857,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           templates: allTemplates,
         });
       } catch (error) {
-        console.error("❌ Background: Error fetching fresh templates:", error);
+        console.error("Error fetching fresh templates:", error);
         
         // Fallback to cached templates if API fails
         const fallbackTemplates = getAllTemplates();
-        console.log("📋 Background: Falling back to cached templates:", fallbackTemplates.length);
+        DEV_UTILS.log("Falling back to cached templates:", fallbackTemplates.length);
         
         sendResponse({
           success: true,
@@ -884,7 +877,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "formatWithTemplate") {
     const { templateId, selectedText, requestId } = message;
 
-    console.log("Processing format request for template:", templateId);
+    DEV_UTILS.log("Processing format request for template:", templateId);
 
     // Validate inputs
     if (!templateId || !selectedText) {
@@ -895,7 +888,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         sendResponse({ error: "Missing template ID or selected text" });
       } catch (e) {
-        console.log("Response channel already closed");
+        DEV_UTILS.log("Response channel already closed");
       }
       return true;
     }
@@ -906,7 +899,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // Get stored access token directly (let API validate authentication)
         const accessToken = await getStoredAccessToken();
 
-        console.log("Starting text formatting...");
+        DEV_UTILS.log("Starting text formatting...");
 
         // Create a minimal template object for API call
         const template = { id: templateId };
@@ -918,7 +911,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           null // user parameter not needed anymore
         );
 
-        console.log("Text formatted successfully");
+        DEV_UTILS.log("Text formatted successfully");
 
         // Try to save to history (gracefully fail if user info not available)
         try {
@@ -950,7 +943,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Continue execution - history saving is not critical
         }
 
-        console.log("Sending formatted response");
+        DEV_UTILS.log("Sending formatted response");
 
         // Send the result directly to the content script instead of using sendResponse
         // This avoids Chrome's message timeout issues
@@ -965,7 +958,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           sendResponse({ formattedText });
         } catch (e) {
-          console.log(
+          DEV_UTILS.log(
             "Response channel already closed, but formatting completed via direct message"
           );
         }
@@ -984,7 +977,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           sendResponse({ error: errorMessage });
         } catch (e) {
-          console.log(
+          DEV_UTILS.log(
             "Response channel already closed, but error sent via direct message"
           );
         }
@@ -998,36 +991,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   try {
     sendResponse({ received: true });
   } catch (e) {
-    console.log("Response channel already closed");
+    DEV_UTILS.log("Response channel already closed");
   }
   return false;
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.url) {
-    console.log("Tab updated:", changeInfo.url);
+    DEV_UTILS.log("Tab updated:", changeInfo.url);
   }
 
   // Check for auth success page with tokens in hash
   if (
     changeInfo.url?.includes("/auth/success#access_token=") ||
     changeInfo.url?.startsWith(
-      "http://localhost:3000/auth/success#access_token="
-    ) ||
-    changeInfo.url?.startsWith(
-      "http://localhost:3001/auth/success#access_token="
+      `${API_CONFIG.WEBSITE_URL}/auth/success#access_token=`
     )
   ) {
-    console.log("OAuth callback detected on success page!");
+    DEV_UTILS.log("OAuth callback detected on success page!");
     finishUserOAuth(changeInfo.url);
   }
 
   // Keep existing checks as fallback
   if (
     changeInfo.url?.startsWith(chrome.identity.getRedirectURL()) ||
-    changeInfo.url?.startsWith("http://localhost:3000/#access_token=")
+    changeInfo.url?.startsWith(`${API_CONFIG.WEBSITE_URL}/#access_token=`)
   ) {
-    console.log("OAuth callback detected!");
+    DEV_UTILS.log("OAuth callback detected!");
     finishUserOAuth(changeInfo.url);
   }
 });
@@ -1037,13 +1027,13 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
  */
 async function finishUserOAuth(url) {
   try {
-    console.log(`handling user OAuth callback for URL: ${url}`);
+    DEV_UTILS.log(`handling user OAuth callback for URL: ${url}`);
 
     // extract tokens from hash
     const hashMap = parseUrlHash(url);
     const access_token = hashMap.get("access_token");
     const refresh_token = hashMap.get("refresh_token");
-    console.log("🔍 Extracted tokens:", {
+    DEV_UTILS.log("Extracted tokens:", {
       access_token: !!access_token,
       refresh_token: !!refresh_token,
     });
@@ -1053,7 +1043,7 @@ async function finishUserOAuth(url) {
     }
 
     // Simply store the Supabase tokens directly - no need for custom endpoint
-    console.log("🔐 Storing Supabase session directly...");
+    DEV_UTILS.log("Storing Supabase session directly...");
 
     // We need to get user info from the token
     // The token is a JWT, we can decode it to get basic info
@@ -1076,24 +1066,24 @@ async function finishUserOAuth(url) {
       [storageKey]: JSON.stringify(sessionToStore),
     });
 
-    console.log("💾 Supabase session stored in Chrome storage successfully");
-    console.log("👤 User authenticated:", tokenPayload.email);
+    DEV_UTILS.log("Supabase session stored in Chrome storage successfully");
+    DEV_UTILS.log("User authenticated:", tokenPayload.email);
 
     // Verify session is actually stored
     try {
       const testToken = await getStoredAccessToken();
-      console.log("✅ Session verified - token accessible:", !!testToken);
+      DEV_UTILS.log("Session verified - token accessible:", !!testToken);
     } catch (e) {
-      console.warn("⚠️ Session verification failed:", e.message);
+      console.warn("Session verification failed:", e.message);
     }
 
     // Trigger a manual load to ensure data is available
-    console.log("🔄 Manually triggering loadUserData after OAuth...");
+    DEV_UTILS.log("Manually triggering loadUserData after OAuth...");
     try {
       await loadUserData();
-      console.log("✅ Manual post-OAuth data load completed");
+      DEV_UTILS.log("Manual post-OAuth data load completed");
     } catch (error) {
-      console.error("❌ Manual post-OAuth data load failed:", error);
+      console.error("Manual post-OAuth data load failed:", error);
     }
 
     // Close the OAuth tab instead of redirecting
@@ -1102,7 +1092,7 @@ async function finishUserOAuth(url) {
       await chrome.tabs.remove(tabs[0].id);
     }
 
-    console.log(`finished handling user OAuth callback`);
+    DEV_UTILS.log(`finished handling user OAuth callback`);
   } catch (error) {
     console.error("OAuth callback error:", error);
   }

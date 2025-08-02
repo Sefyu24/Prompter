@@ -1,6 +1,6 @@
 /**
  * @fileoverview Text selection handling module
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 

@@ -2,7 +2,7 @@
 
 /**
  * @fileoverview Build script for content script modules
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -49,7 +49,7 @@ const buildConfig = {
     ),
   },
   banner: {
-    js: `// Prompter Extension - Content Script (Refactored)
+    js: `// Promptr Extension - Content Script (Refactored)
 // Generated: ${new Date().toISOString()}
 // Modules: TextSelection, TextReplacement, VisualFeedback, ModalSystem, SiteHandlers`,
   },
@@ -125,7 +125,7 @@ async function main() {
   console.log("  1. Load extension in Chrome (chrome://extensions/)");
   console.log("  2. Test on supported websites");
   console.log(
-    '  3. Check console for "🎉 Prompter Extension - Fully Refactored & Ready!"'
+    '  3. Check console for "🎉 Promptr Extension - Fully Refactored & Ready!"'
   );
 }
 

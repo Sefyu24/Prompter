@@ -20,10 +20,8 @@ export const chromeStorageAdapter = {
    */
   async getItem(key) {
     try {
-      console.log(`ChromeStorageAdapter: Getting item "${key}"`);
       const result = await chrome.storage.local.get(key);
       const value = result[key] || null;
-      console.log(`ChromeStorageAdapter: Retrieved "${key}":`, value !== null ? '(data present)' : 'null');
       return value;
     } catch (error) {
       console.error(`ChromeStorageAdapter: Error getting item "${key}":`, error);
@@ -39,17 +37,7 @@ export const chromeStorageAdapter = {
    */
   async setItem(key, value) {
     try {
-      console.log(`ChromeStorageAdapter: Setting item "${key}"`);
-      console.log(`ChromeStorageAdapter: Value type:`, typeof value);
-      console.log(`ChromeStorageAdapter: Value preview:`, value ? (typeof value === 'string' ? value.substring(0, 100) + '...' : 'object') : 'null');
-      
       await chrome.storage.local.set({ [key]: value });
-      console.log(`ChromeStorageAdapter: Successfully stored "${key}"`);
-      
-      // Verify the storage immediately after setting
-      const verification = await chrome.storage.local.get([key]);
-      console.log(`ChromeStorageAdapter: Verification - item exists:`, !!verification[key]);
-      
     } catch (error) {
       console.error(`ChromeStorageAdapter: Error setting item "${key}":`, error);
       throw error;
@@ -63,9 +51,7 @@ export const chromeStorageAdapter = {
    */
   async removeItem(key) {
     try {
-      console.log(`ChromeStorageAdapter: Removing item "${key}"`);
       await chrome.storage.local.remove(key);
-      console.log(`ChromeStorageAdapter: Successfully removed "${key}"`);
     } catch (error) {
       console.error(`ChromeStorageAdapter: Error removing item "${key}":`, error);
       throw error;
@@ -95,8 +81,6 @@ export async function getStoredSession() {
  */
 export async function clearStoredAuth() {
   try {
-    console.log('ChromeStorageAdapter: Clearing all Supabase auth data');
-    
     // Get all storage keys
     const allData = await chrome.storage.local.get(null);
     const authKeys = Object.keys(allData).filter(key => 
@@ -105,9 +89,6 @@ export async function clearStoredAuth() {
     
     if (authKeys.length > 0) {
       await chrome.storage.local.remove(authKeys);
-      console.log('ChromeStorageAdapter: Cleared auth keys:', authKeys);
-    } else {
-      console.log('ChromeStorageAdapter: No auth data found to clear');
     }
   } catch (error) {
     console.error('ChromeStorageAdapter: Error clearing stored auth:', error);
@@ -123,18 +104,10 @@ export async function clearStoredAuth() {
  */
 export async function getStoredAccessToken() {
   try {
-    console.log('ChromeStorageAdapter: Getting stored access token directly');
     const result = await chrome.storage.local.get(['sb-audlasqcnqqtfednxmdo-auth-token']);
     const sessionData = result['sb-audlasqcnqqtfednxmdo-auth-token'];
     
-    console.log('ChromeStorageAdapter: Raw session data:', sessionData ? 'present' : 'null');
-    console.log('ChromeStorageAdapter: Session data type:', typeof sessionData);
-    
     if (!sessionData) {
-      // Let's also check what's actually in storage
-      const allData = await chrome.storage.local.get(null);
-      const authKeys = Object.keys(allData).filter(key => key.startsWith('sb-'));
-      console.log('ChromeStorageAdapter: Found storage keys starting with sb-:', authKeys);
       throw new Error('No authentication session found');
     }
 
@@ -152,7 +125,6 @@ export async function getStoredAccessToken() {
       throw new Error('No access token found in session');
     }
 
-    console.log('ChromeStorageAdapter: Access token retrieved successfully');
     return accessToken;
   } catch (error) {
     console.error('ChromeStorageAdapter: Error getting stored access token:', error);
@@ -167,7 +139,6 @@ export async function getStoredAccessToken() {
 export async function debugStorageContents() {
   try {
     const allData = await chrome.storage.local.get(null);
-    console.log('ChromeStorageAdapter: All storage contents:', allData);
     return allData;
   } catch (error) {
     console.error('ChromeStorageAdapter: Error debugging storage:', error);
@@ -183,11 +154,9 @@ export async function checkAuthStatus() {
   try {
     const allData = await chrome.storage.local.get(null);
     const authKeys = Object.keys(allData).filter(key => key.startsWith('sb-'));
-    console.log('ChromeStorageAdapter: Auth status check - found keys:', authKeys);
     
     // Check if we have the main session token
     const hasMainSession = !!allData['sb-audlasqcnqqtfednxmdo-auth-token'];
-    console.log('ChromeStorageAdapter: Has main session token:', hasMainSession);
     
     return hasMainSession;
   } catch (error) {

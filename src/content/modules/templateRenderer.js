@@ -1,6 +1,6 @@
 /**
  * @fileoverview Template rendering and search functionality
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 

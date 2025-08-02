@@ -33,10 +33,15 @@ export default defineConfig(({ command, mode }) => {
     },
     plugins: [
       {
-        name: 'copy-manifest',
+        name: 'copy-extension-files',
         writeBundle() {
           // Copy manifest.json to dist
           copyFileSync('manifest.json', 'dist/manifest.json');
+          
+          // Copy icon files to dist
+          copyFileSync('src/assets/logos/brand16.png', 'dist/brand16.png');
+          copyFileSync('src/assets/logos/brand48.png', 'dist/brand48.png');
+          copyFileSync('src/assets/logos/brand128.png', 'dist/brand128.png');
         }
       }
     ]

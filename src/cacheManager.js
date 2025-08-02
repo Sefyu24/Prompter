@@ -1,6 +1,6 @@
 /**
  * @fileoverview Advanced caching system for Chrome extension
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -73,7 +73,6 @@ export class CacheManager {
       // First check memory cache
       const memoryCached = this.memoryCache.get(cacheKey);
       if (memoryCached && this.isValidEntry(memoryCached, customTTL)) {
-        console.log(`📋 Cache HIT (memory): ${key}`);
         return memoryCached.data;
       }
 
@@ -82,14 +81,11 @@ export class CacheManager {
       const storageCached = result[cacheKey];
       
       if (storageCached && this.isValidEntry(storageCached, customTTL)) {
-        console.log(`📋 Cache HIT (storage): ${key}`);
-        
         // Promote to memory cache
         this.memoryCache.set(cacheKey, storageCached);
         return storageCached.data;
       }
 
-      console.log(`📋 Cache MISS: ${key}`);
       return null;
     } catch (error) {
       console.warn(`Cache get error for ${key}:`, error);
@@ -121,8 +117,6 @@ export class CacheManager {
       // Store in both memory and Chrome storage
       this.memoryCache.set(cacheKey, entry);
       await chrome.storage.local.set({ [cacheKey]: entry });
-      
-      console.log(`📋 Cache SET: ${key} (TTL: ${ttl/1000}s)`);
     } catch (error) {
       console.warn(`Cache set error for ${key}:`, error);
     }
@@ -145,7 +139,6 @@ export class CacheManager {
       const memoryCached = this.memoryCache.get(cacheKey);
       if (memoryCached && memoryCached.lastModified) {
         const isFresh = memoryCached.lastModified >= serverLastModified;
-        console.log(`📋 Cache freshness check (memory): ${key} - ${isFresh ? 'FRESH' : 'STALE'}`);
         return isFresh;
       }
 
@@ -155,7 +148,6 @@ export class CacheManager {
       
       if (storageCached && storageCached.lastModified) {
         const isFresh = storageCached.lastModified >= serverLastModified;
-        console.log(`📋 Cache freshness check (storage): ${key} - ${isFresh ? 'FRESH' : 'STALE'}`);
         return isFresh;
       }
 
@@ -179,8 +171,6 @@ export class CacheManager {
       // Remove from both memory and storage
       this.memoryCache.delete(cacheKey);
       await chrome.storage.local.remove([cacheKey]);
-      
-      console.log(`📋 Cache INVALIDATED: ${key}`);
     } catch (error) {
       console.warn(`Cache invalidation error for ${key}:`, error);
     }
@@ -212,7 +202,7 @@ export class CacheManager {
         }
       }
 
-      console.log(`📋 Cache INVALIDATED for user: ${userId} (${keysToRemove.length} entries)`);
+      // User cache invalidated silently
     } catch (error) {
       console.warn(`Cache user invalidation error for ${userId}:`, error);
     }
@@ -244,7 +234,7 @@ export class CacheManager {
         }
       }
 
-      console.log(`📋 Cache CLEANUP: Removed ${keysToRemove.length} expired entries`);
+      // Cache cleanup completed silently
     } catch (error) {
       console.warn('Cache cleanup error:', error);
     }
@@ -336,7 +326,6 @@ export class CacheManager {
 
       // If 304 Not Modified, use cached data
       if (response.status === 304 && cachedEntry) {
-        console.log(`📋 API 304 - Using cached data: ${cacheKey}`);
         // Update timestamp but keep data
         await this.set(cacheKey, cachedEntry.data, userId, ttl, cachedEntry.lastModified);
         return { data: cachedEntry.data, fromCache: true };
@@ -359,7 +348,6 @@ export class CacheManager {
       // Try to return stale cache data as fallback
       const staleCache = await this.get(cacheKey, userId, Number.MAX_SAFE_INTEGER);
       if (staleCache) {
-        console.log(`📋 Using stale cache as fallback: ${cacheKey}`);
         return { data: staleCache, fromCache: true };
       }
       

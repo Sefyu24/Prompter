@@ -1,6 +1,6 @@
 /**
  * @fileoverview Utility functions for the content script
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -104,7 +104,6 @@ export function findEditableParent(node) {
   if (hostname === "t3.chat") {
     const chatInput = document.querySelector("#chat-input");
     if (chatInput && isTextInput(chatInput)) {
-      console.log("🎯 Found t3.chat input via fallback selector:", chatInput);
       return chatInput;
     }
   }
@@ -122,10 +121,6 @@ export function findEditableParent(node) {
     for (const selector of SELECTORS.TEXT_INPUTS) {
       const input = searchRoot.querySelector(selector);
       if (input && isTextInput(input)) {
-        console.log(
-          `🎯 Found input via fallback selector "${selector}":`,
-          input
-        );
         return input;
       }
     }

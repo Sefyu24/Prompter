@@ -1,6 +1,6 @@
 /**
  * @fileoverview Visual feedback module for notifications and transitions
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 

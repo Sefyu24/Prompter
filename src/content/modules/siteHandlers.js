@@ -1,6 +1,6 @@
 /**
  * @fileoverview Site-specific text replacement handlers
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 

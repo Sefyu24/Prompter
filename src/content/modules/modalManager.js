@@ -1,6 +1,6 @@
 /**
  * @fileoverview Main modal manager - orchestrates the entire modal system
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -85,11 +85,6 @@ export class ModalManager {
     this.focusSearchInput();
 
     this.isVisible = true;
-    console.log(
-      "📱 Modal opened with",
-      config.templates?.length || 0,
-      "templates"
-    );
   }
 
   /**
@@ -174,7 +169,6 @@ export class ModalManager {
       // Set content directly since this is a newly created element
       try {
         this.modalElement.innerHTML = modalContent;
-        console.log("✅ Modal HTML set successfully");
       } catch (htmlError) {
         console.error("Failed to set modal HTML:", htmlError);
         throw new Error("Failed to set modal content");
@@ -191,8 +185,6 @@ export class ModalManager {
         console.error("Elements with 'search' class:", this.modalElement.querySelectorAll(".prompter-search"));
         throw new Error("Failed to find search input element");
       }
-      
-      console.log("✅ Search input found:", this.searchInput);
     } catch (error) {
       console.error("Modal creation failed:", error);
       throw error;
@@ -679,7 +671,6 @@ export class ModalManager {
     // Reset renderer
     templateRenderer.reset();
 
-    console.log("📱 Modal closed");
   }
 
   /**
@@ -724,7 +715,6 @@ export async function handleKeyboardModal(message) {
   
   // If called too quickly, debounce it
   if (now - lastModalOpenTime < MODAL_OPEN_DEBOUNCE) {
-    console.log('🚫 Modal opening debounced - preventing rapid calls');
     modalOpenTimeout = setTimeout(() => {
       handleKeyboardModalImmediate(message);
     }, MODAL_OPEN_DEBOUNCE);
@@ -762,40 +752,10 @@ async function handleKeyboardModalImmediate(message) {
     return;
   }
 
-  console.log("🔍 Selection Debug Info:", {
-    text: selectionInfo.text,
-    textLength: selectionInfo.text.length,
-    element: selectionInfo.element,
-    elementTagName: selectionInfo.element?.tagName,
-    elementId: selectionInfo.element?.id,
-    elementClass: selectionInfo.element?.className,
-    anchorNode: selectionInfo.anchorNode,
-    anchorNodeType: selectionInfo.anchorNode?.nodeType,
-    anchorNodeName: selectionInfo.anchorNode?.nodeName,
-    anchorNodeParent: selectionInfo.anchorNode?.parentElement,
-    anchorNodeParentTag: selectionInfo.anchorNode?.parentElement?.tagName,
-    isInInputField: selectionInfo.isInInputField,
-    currentURL: window.location.href,
-  });
 
   // Find target element using the actual anchor node, matching original behavior
   const targetElement = findEditableParent(selectionInfo.anchorNode);
 
-  console.log("🎯 Target Element Search Result:", {
-    targetElement: targetElement,
-    targetElementTag: targetElement?.tagName,
-    targetElementId: targetElement?.id,
-    targetElementClass: targetElement?.className,
-    targetElementContentEditable: targetElement?.contentEditable,
-    targetElementRole: targetElement?.getAttribute("role"),
-    targetElementDataAttrs: targetElement
-      ? Object.fromEntries(
-          Array.from(targetElement.attributes)
-            .filter((attr) => attr.name.startsWith("data-"))
-            .map((attr) => [attr.name, attr.value])
-        )
-      : {},
-  });
 
   if (!targetElement) {
     console.error("❌ findEditableParent returned null for:", {
@@ -812,9 +772,7 @@ async function handleKeyboardModalImmediate(message) {
 
   // Fetch fresh templates before showing modal
   try {
-    console.log('📋 Fetching fresh templates before modal...');
     const freshTemplates = await backgroundCommunicator.getTemplates();
-    console.log(`📋 Got ${freshTemplates.length} fresh templates for modal`);
     
     // Use singleton modal manager to prevent duplicates
     await globalModalManager.show({
@@ -824,8 +782,6 @@ async function handleKeyboardModalImmediate(message) {
       error: message.error,
     });
   } catch (templatesError) {
-    console.warn('⚠️ Failed to fetch fresh templates, using message templates:', templatesError);
-    
     // Fallback to templates from message using singleton
     await globalModalManager.show({
       templates: message.templates || [],

@@ -1,6 +1,6 @@
 /**
  * @fileoverview DOM safety utilities for robust element operations
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 

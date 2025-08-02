@@ -2,7 +2,7 @@
 
 /**
  * @fileoverview Development watch script for automatic rebuilding
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -133,7 +133,7 @@ async function main() {
 }
 
 // Show helpful information
-console.log("🔧 Prompter Extension - Development Watch Mode");
+console.log("🔧 Promptr Extension - Development Watch Mode");
 console.log("=".repeat(50));
 
 // Run if called directly

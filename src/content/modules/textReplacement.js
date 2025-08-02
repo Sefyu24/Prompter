@@ -1,6 +1,6 @@
 /**
  * @fileoverview Core text replacement module
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -189,12 +189,6 @@ export class TextReplacementManager {
       };
     }
 
-    console.log("Replacing text from modal:", {
-      element: targetElement.tagName,
-      contentEditable: targetElement.contentEditable,
-      selectedText: selectedText,
-      newText: newText.substring(0, 100) + (newText.length > 100 ? "..." : ""),
-    });
 
     try {
       // Check element visibility and accessibility
@@ -249,7 +243,6 @@ export class TextReplacementManager {
    */
   refreshSiteHandler() {
     this.siteHandler = SiteHandlerFactory.createHandler();
-    console.log(`Site handler refreshed: ${this.siteHandler.siteName}`);
   }
 
   /**

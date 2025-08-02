@@ -1,6 +1,6 @@
 /**
  * @fileoverview Central error handling and recovery utilities
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -236,13 +236,11 @@ export class ErrorHandler {
    * @private
    */
   attemptDOMRecovery(error, context) {
-    console.log('Attempting DOM recovery for:', context);
     
     // Check if document is ready
     if (document.readyState !== 'complete') {
-      console.log('Document not ready, waiting...');
       document.addEventListener('DOMContentLoaded', () => {
-        console.log('DOM ready after error, recovery possible');
+        // DOM ready after error, recovery possible
       }, { once: true });
     }
     
@@ -257,7 +255,6 @@ export class ErrorHandler {
    * @private
    */
   attemptMessageRecovery(error, context) {
-    console.log('Attempting message recovery for:', context);
     
     // Check if runtime is available
     if (!chrome?.runtime?.id) {
@@ -276,7 +273,6 @@ export class ErrorHandler {
    * @private
    */
   attemptModalRecovery(error, context) {
-    console.log('Attempting modal recovery for:', context);
     
     // Clean up any stuck modals
     const modals = document.querySelectorAll('.prompter-modal-overlay');
@@ -312,9 +308,6 @@ export class ErrorHandler {
         }
       });
       
-      if (cleanedCount > 0) {
-        console.log(`Cleaned up ${cleanedCount} orphaned elements`);
-      }
     } catch (error) {
       console.warn('Element cleanup failed:', error);
     }
@@ -326,7 +319,6 @@ export class ErrorHandler {
    */
   clearPendingMessages() {
     // This would be implemented based on the specific message handling system
-    console.log('Clearing pending messages');
   }
 
   /**
@@ -376,7 +368,6 @@ export class ErrorHandler {
   clearHistory() {
     this.errorHistory = [];
     this.errorCounts.clear();
-    console.log('Error history cleared');
   }
 
   /**

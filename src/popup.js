@@ -3,6 +3,13 @@ import { API_CONFIG } from "./config.js";
 import { createIcons, Zap, Settings } from 'lucide';
 import { cacheManager } from "./cacheManager.js";
 
+// Security: HTML escaping function to prevent XSS
+function escapeHTML(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 // Notification system for popup
 class PopupNotificationManager {
   constructor() {
@@ -158,8 +165,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   async function handleAuthSuccess(sessionData) {
     try {
-      console.log("🔐 Popup: Handling auth success...");
-      
       // Simply store the Supabase tokens directly - no need for custom endpoint
       const tokenPayload = JSON.parse(atob(sessionData.access_token.split('.')[1]));
       
@@ -180,8 +185,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         [storageKey]: JSON.stringify(sessionToStore)
       });
 
-      console.log("✅ Popup: Supabase session stored successfully");
-      console.log("👤 Popup: User authenticated:", tokenPayload.email);
       showHomePage(); // Manually show home page since we're not using Supabase auth state change
     } catch (error) {
       console.error("❌ Popup: Error handling auth success:", error);
@@ -198,31 +201,19 @@ document.addEventListener("DOMContentLoaded", async function () {
   const testLoginButton = document.getElementById("sso-btn");
   let clickedTimes = 0;
 
-  console.log(
-    "Chrome extension redirect url: ",
-    chrome.identity.getRedirectURL()
-  );
 
   // Check for existing session using direct Chrome storage access
-  console.log("🔍 Checking for existing session...");
   try {
     const storageKey = 'sb-audlasqcnqqtfednxmdo-auth-token';
     const result = await chrome.storage.local.get([storageKey]);
     const sessionData = result[storageKey];
 
-    console.log("📋 Session check result:", {
-      hasSession: !!sessionData,
-      userEmail: sessionData ? JSON.parse(sessionData).user?.email || "no email" : "no user",
-    });
-
     if (sessionData) {
       try {
         const parsedSession = JSON.parse(sessionData);
         if (parsedSession.user && parsedSession.access_token) {
-          console.log("✅ Valid session found, showing home page");
           showHomePage();
         } else {
-          console.log("⚠️ Invalid session data, showing login page");
           showLoginPage();
         }
       } catch (parseError) {
@@ -230,7 +221,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         showLoginPage();
       }
     } else {
-      console.log("⚠️ No session found, showing login page");
       showLoginPage();
     }
   } catch (error) {
@@ -245,13 +235,19 @@ document.addEventListener("DOMContentLoaded", async function () {
     loginWithGoogle();
   });
 
+  // Visit website button
+  const visitWebsiteButton = document.getElementById("visit-website-btn");
+  if (visitWebsiteButton) {
+    visitWebsiteButton.addEventListener("click", function () {
+      chrome.tabs.create({ url: API_CONFIG.WEBSITE_URL });
+    });
+  }
+
   // Sign out button
   const signOutButton = document.getElementById("sign-out-btn");
   if (signOutButton) {
     signOutButton.addEventListener("click", async function () {
       try {
-        console.log("🚪 Signing out user...");
-        
         // Get user ID before clearing session
         const storageKey = 'sb-audlasqcnqqtfednxmdo-auth-token';
         const result = await chrome.storage.local.get([storageKey]);
@@ -265,11 +261,8 @@ document.addEventListener("DOMContentLoaded", async function () {
         // Clear user's cache data
         if (userId) {
           await cacheManager.invalidateUser(userId);
-          console.log("✅ User cache cleared");
         }
         
-        console.log("✅ Session cleared successfully");
-
         // Show login page
         showLoginPage();
         
@@ -280,8 +273,8 @@ document.addEventListener("DOMContentLoaded", async function () {
             event: "SIGNED_OUT",
             session: null,
           })
-          .catch((error) => {
-            console.log("Background script not ready for auth notification:", error);
+          .catch(() => {
+            // Background script not ready - this is expected behavior
           });
           
       } catch (error) {
@@ -308,7 +301,6 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   async function loginWithGoogle() {
     try {
-      console.log("Starting Google OAuth...");
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -321,7 +313,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         throw error;
       }
 
-      console.log("Opening OAuth URL:", data.url);
       await chrome.tabs.create({ url: data.url });
     } catch (error) {
       console.error("Login error:", error);
@@ -375,8 +366,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         
         // Store stats for later use with membership data
         window.currentStats = stats;
-          
-        console.log(`Stats loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`, stats);
       } catch (error) {
         console.error("Error fetching stats:", error);
         notificationManager.showError(getUserFriendlyErrorMessage(error, 'stats'));
@@ -417,10 +406,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         600000 // 10 minutes TTL for membership status
       );
 
-      console.log(`🔍 Membership data loaded ${fromCache ? 'FROM CACHE' : 'FROM API'}:`, userData);
-      console.log("🔍 Subscription data:", userData.subscription);
       displayMembershipStatus(userData);
-      console.log("User membership status loaded successfully");
     } catch (error) {
       console.error("Error fetching user membership status:", error);
       notificationManager.showError(getUserFriendlyErrorMessage(error, 'membership'));
@@ -529,7 +515,6 @@ document.addEventListener("DOMContentLoaded", async function () {
       const sessionData = result[storageKey];
       
       if (!sessionData) {
-        console.log("No user found, skipping history load");
         displayHistory([]);
         return;
       }
@@ -538,7 +523,6 @@ document.addEventListener("DOMContentLoaded", async function () {
       const user = parsedSession.user;
       
       if (!user || !user.id) {
-        console.log("No user ID found, skipping history load");
         displayHistory([]);
         return;
       }
@@ -574,15 +558,24 @@ document.addEventListener("DOMContentLoaded", async function () {
             ? item.inputText.substring(0, 100) + "..."
             : item.inputText;
 
+        // Security: Escape all user data to prevent XSS
+        const escapedId = escapeHTML(item.id);
+        const escapedTemplateName = escapeHTML(item.templateName);
+        const escapedPreview = escapeHTML(preview);
+        const escapedDomain = escapeHTML(item.domain);
+        const escapedTimeAgo = escapeHTML(timeAgo);
+        const escapedInputText = escapeHTML(item.inputText);
+        const escapedOutputText = escapeHTML(item.outputText);
+
         return `
-        <div class="bg-background border border-border rounded-md mb-[10px] overflow-hidden transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-history-id="${item.id}">
-          <div class="flex items-center justify-between p-3 cursor-pointer hover:bg-muted transition-colors duration-200" data-toggle-id="${item.id}">
+        <div class="bg-background border border-border rounded-md mb-[10px] overflow-hidden transition-all duration-200 hover:border-primary hover:shadow-sm last:mb-0" data-history-id="${escapedId}">
+          <div class="flex items-center justify-between p-3 cursor-pointer hover:bg-muted transition-colors duration-200" data-toggle-id="${escapedId}">
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-primary text-sm mb-1">${item.templateName}</div>
-              <div class="text-xs text-foreground mb-[6px] line-clamp-2 leading-[1.3] break-words overflow-hidden">${preview}</div>
+              <div class="font-medium text-primary text-sm mb-1">${escapedTemplateName}</div>
+              <div class="text-xs text-foreground mb-[6px] line-clamp-2 leading-[1.3] break-words overflow-hidden">${escapedPreview}</div>
               <div class="flex gap-3 text-[11px] text-muted-foreground">
-                <span class="bg-accent text-accent-foreground px-[6px] py-[2px] rounded-sm font-medium">${item.domain}</span>
-                <span class="text-muted-foreground">${timeAgo}</span>
+                <span class="bg-accent text-accent-foreground px-[6px] py-[2px] rounded-sm font-medium">${escapedDomain}</span>
+                <span class="text-muted-foreground">${escapedTimeAgo}</span>
               </div>
             </div>
             <div class="text-muted-foreground text-xs ml-2 transition-transform duration-200">▼</div>
@@ -590,12 +583,12 @@ document.addEventListener("DOMContentLoaded", async function () {
           <div class="hidden border-t border-border p-[15px] bg-muted/50">
             <div class="mb-[15px] last:mb-0">
               <div class="block mb-2 text-xs text-foreground font-semibold">Input:</div>
-              <div class="bg-background border border-border rounded p-[10px] text-[11px] leading-[1.4] text-foreground whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto font-mono">${item.inputText}</div>
+              <div class="bg-background border border-border rounded p-[10px] text-[11px] leading-[1.4] text-foreground whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto font-mono">${escapedInputText}</div>
             </div>
             <div class="mb-[15px] last:mb-0">
               <div class="block mb-2 text-xs text-foreground font-semibold">Output:</div>
-              <div class="bg-background border border-border rounded p-[10px] text-[11px] leading-[1.4] text-foreground whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto font-mono">${item.outputText}</div>
-              <button class="copy-btn mt-2 px-3 py-[6px] bg-primary text-primary-foreground border-none rounded text-[11px] font-medium cursor-pointer transition-all duration-200 hover:bg-primary/90 active:bg-primary/80" data-copy-id="${item.id}">
+              <div class="bg-background border border-border rounded p-[10px] text-[11px] leading-[1.4] text-foreground whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto font-mono">${escapedOutputText}</div>
+              <button class="copy-btn mt-2 px-3 py-[6px] bg-primary text-primary-foreground border-none rounded text-[11px] font-medium cursor-pointer transition-all duration-200 hover:bg-primary/90 active:bg-primary/80" data-copy-id="${escapedId}">
                 Copy Output
               </button>
             </div>
@@ -701,7 +694,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         const sessionData = result[storageKey];
         
         if (!sessionData) {
-          console.log("No user found, cannot clear history");
           notificationManager.showError("Please log in to clear history");
           return;
         }
@@ -710,7 +702,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         const user = parsedSession.user;
         
         if (!user || !user.id) {
-          console.log("No user ID found, cannot clear history");
           notificationManager.showError("Please log in to clear history");
           return;
         }
@@ -720,7 +711,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         await chrome.storage.local.remove([historyKey]);
         displayHistory([]);
         notificationManager.showSuccess("History cleared successfully!");
-        console.log("History cleared for user:", user.id);
       } catch (error) {
         console.error("Error clearing history:", error);
         notificationManager.showError("Failed to clear history");
@@ -748,13 +738,13 @@ document.addEventListener("DOMContentLoaded", async function () {
   function handleUpgradeClick() {
     // Open upgrade page or redirect to pricing
     // You can customize this URL to your pricing page
-    chrome.tabs.create({ url: 'https://your-website.com/pricing' });
+    chrome.tabs.create({ url: `${API_CONFIG.WEBSITE_URL}/pricing` });
   }
 
   // Handle manage templates button click
   function handleManageTemplatesClick() {
     // Open templates management page
-    chrome.tabs.create({ url: 'https://your-website.com/dashboard/template' });
+    chrome.tabs.create({ url: `${API_CONFIG.WEBSITE_URL}/dashboard/template` });
   }
 
   // Session loading is now handled above with proper restoration

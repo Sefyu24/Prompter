@@ -1,6 +1,6 @@
 /**
  * @fileoverview Main content script entry point (refactored)
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -18,8 +18,6 @@ import { ACTIONS, NOTIFICATION_TYPES } from "./constants.js";
  * @typedef {import('./types.js').ChromeMessage} ChromeMessage
  */
 
-console.log("🔄 Prompter Content Script (Refactored) - Loaded");
-console.log(`📍 Site Handler: ${textReplacementManager.getSiteHandlerInfo()}`);
 
 /**
  * Enhanced message listener with better error handling and logging
@@ -27,20 +25,6 @@ console.log(`📍 Site Handler: ${textReplacementManager.getSiteHandlerInfo()}`)
 chrome.runtime.onMessage.addListener(
   errorHandler.wrapFunction(
     (message, sender, sendResponse) => {
-      console.log("📨 Received message:", message.action || message.type);
-
-      // Add detailed logging for showKeyboardModal
-      if (message.action === "showKeyboardModal") {
-        console.log("🔍 DEBUGGING received showKeyboardModal:", {
-          action: message.action,
-          templatesCount: message.templates?.length || 0,
-          userEmail: message.user?.email,
-          templateNames: message.templates?.map((t) => t.name) || [],
-          hasTemplates: message.templates && message.templates.length > 0,
-          error: message.error,
-          fullMessage: message,
-        });
-      }
 
       // Always send a response to prevent port closure
       try {
@@ -52,7 +36,7 @@ chrome.runtime.onMessage.addListener(
       // Handle different message types
       handleMessage(message)
         .then(() => {
-          console.log("✅ Message handled successfully");
+          // Message handled successfully
         })
         .catch((error) => {
           errorHandler.handleError(error, 'messageHandling', { message });
@@ -97,7 +81,7 @@ async function handleMessage(message) {
       break;
 
     default:
-      console.warn("⚠️ Unknown message action:", message.action);
+      console.error("Unknown message action:", message.action);
   }
 }
 
@@ -112,7 +96,6 @@ async function handleReplaceText(message) {
     throw new Error("No text provided for replacement");
   }
 
-  console.log("🔄 Processing text replacement...");
 
   const result = await textReplacementManager.replaceSelectedText(
     message.newText,
@@ -125,7 +108,6 @@ async function handleReplaceText(message) {
     throw new Error(result.error || "Text replacement failed");
   }
 
-  console.log("✅ Text replacement completed successfully");
 }
 
 /**
@@ -136,25 +118,12 @@ async function validateSetup() {
   try {
     // Test text selection manager
     const hasSelection = textSelectionManager.hasValidSelection();
-    console.log(
-      "📋 Selection Manager:",
-      hasSelection ? "Active selection found" : "No active selection"
-    );
 
     // Test text replacement validation
     const validationResult = await textReplacementManager.validateReplacement();
-    console.log(
-      "🔧 Replacement Manager:",
-      validationResult.valid ? "Ready" : `Not ready: ${validationResult.reason}`
-    );
 
     // Test visual feedback
-    console.log("🎨 Visual Feedback Manager: Ready");
-    console.log("📱 Modal System: Ready");
 
-    console.log(
-      "✅ All systems operational - Phase 5 Modal Refactoring Complete!"
-    );
   } catch (error) {
     console.error("❌ Setup validation failed:", error);
   }
@@ -166,23 +135,7 @@ async function validateSetup() {
  */
 function performanceMonitoring() {
   // Log memory usage if available
-  if (performance.memory) {
-    console.log("📊 Memory Usage:", {
-      used: Math.round(performance.memory.usedJSHeapSize / 1024 / 1024) + "MB",
-      total:
-        Math.round(performance.memory.totalJSHeapSize / 1024 / 1024) + "MB",
-      limit:
-        Math.round(performance.memory.jsHeapSizeLimit / 1024 / 1024) + "MB",
-    });
-  }
 
-  // Log module load times
-  console.log("⚡ Module Load Performance:", {
-    textSelection: "✅ Loaded",
-    textReplacement: "✅ Loaded",
-    visualFeedback: "✅ Loaded",
-    modalSystem: "✅ Loaded",
-  });
 }
 
 /**
@@ -228,7 +181,6 @@ function setupErrorBoundary() {
     }
   });
 
-  console.log('🛡️ Error boundary established with centralized error handler');
 }
 
 /**
@@ -250,7 +202,6 @@ async function initialize() {
     performanceMonitoring();
 
     // Success message
-    console.log("🎉 Prompter Extension - Fully Refactored & Ready!");
   } catch (error) {
     console.error("❌ Initialization failed:", error);
     visualFeedbackManager.showError("Extension failed to initialize properly");
@@ -266,34 +217,6 @@ window.prompterManagers = {
   textReplacement: textReplacementManager,
   visualFeedback: visualFeedbackManager,
 
-  // Add debugging utilities
-  debug: {
-    getStats: () => ({
-      selectionManager: textSelectionManager.getCurrentSelection(),
-      replacementValidation: textReplacementManager.validateReplacement(),
-      siteHandler: textReplacementManager.getSiteHandlerInfo(),
-    }),
-
-    runTests: async () => {
-      console.log("🧪 Running diagnostic tests...");
-      await validateSetup();
-      performanceMonitoring();
-      console.log("✅ Diagnostic tests completed");
-    },
-
-    showTestNotification: () => {
-      visualFeedbackManager.showSuccess(
-        "🎉 Refactored system working perfectly!"
-      );
-    },
-  },
 };
 
-// Add global shortcut for debugging (Ctrl+Shift+D)
-document.addEventListener("keydown", (event) => {
-  if (event.ctrlKey && event.shiftKey && event.key === "D") {
-    event.preventDefault();
-    console.log("🔍 Prompter Debug Mode Activated");
-    window.prompterManagers.debug.runTests();
-  }
-});
+// Production: Debug shortcuts removed for security

@@ -1,6 +1,6 @@
 /**
  * @fileoverview Message handling utilities with retry mechanisms and error recovery
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
@@ -68,7 +68,6 @@ export class MessageHandler {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        console.log(`📤 Sending message (attempt ${attempt + 1}/${retries + 1}):`, message);
         
         const response = await this.sendSingleMessage(message, timeout, expectResponse);
         
@@ -76,12 +75,10 @@ export class MessageHandler {
           throw new Error("No response received");
         }
 
-        console.log(`✅ Message sent successfully:`, response);
         return response;
 
       } catch (error) {
         lastError = error;
-        console.warn(`❌ Message attempt ${attempt + 1} failed:`, error);
 
         // Don't retry certain types of errors
         if (this.isNonRetryableError(error)) {
@@ -91,7 +88,6 @@ export class MessageHandler {
         // Wait before retry with exponential backoff
         if (attempt < retries) {
           const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
-          console.log(`⏳ Retrying in ${delay}ms...`);
           await this.wait(delay);
         }
       }
@@ -163,12 +159,10 @@ export class MessageHandler {
    */
   validateMessage(message) {
     if (!message || typeof message !== 'object') {
-      console.warn("Message must be an object");
       return false;
     }
 
     if (!message.action || typeof message.action !== 'string') {
-      console.warn("Message must have a string action property");
       return false;
     }
 
@@ -225,7 +219,6 @@ export class MessageHandler {
       const handler = this.messageHandlers.get(message.action);
       
       if (!handler) {
-        console.warn(`No handler registered for action: ${message.action}`);
         sendResponse({ error: `Unknown action: ${message.action}` });
         return false;
       }
@@ -240,14 +233,12 @@ export class MessageHandler {
             try {
               sendResponse(response || { success: true });
             } catch (e) {
-              console.warn("Failed to send async response:", e);
             }
           })
           .catch(error => {
             try {
               sendResponse({ error: error.message || "Handler error" });
             } catch (e) {
-              console.warn("Failed to send error response:", e);
             }
           });
         
@@ -263,7 +254,6 @@ export class MessageHandler {
       try {
         sendResponse({ error: error.message || "Unknown error" });
       } catch (e) {
-        console.warn("Failed to send error response:", e);
       }
       return false;
     }
@@ -283,12 +273,10 @@ export class MessageHandler {
         try {
           chrome.runtime.onMessage.removeListener(boundHandler);
         } catch (error) {
-          console.warn("Failed to remove message listener:", error);
         }
       };
     }
 
-    console.warn("Chrome runtime onMessage API not available");
     return () => {}; // No-op cleanup
   }
 
@@ -435,7 +423,6 @@ export class BackgroundCommunicator {
 
     const pendingRequest = this.pendingFormatRequests.get(requestId);
     if (!pendingRequest) {
-      console.warn("Received response for unknown request:", requestId);
       return;
     }
 
@@ -499,11 +486,9 @@ export class BackgroundCommunicator {
       
       // First check if we should use simple rate limiting fallback
       if (!forceRefresh && this.cachedTemplates && (now - this.lastTemplatesFetch < this.templatesFetchCooldown)) {
-        console.log(`📋 Using in-memory cached templates (${this.cachedTemplates.length}) - cooldown active`);
         return this.cachedTemplates;
       }
 
-      console.log('📋 Requesting fresh templates through background script...');
       this.lastTemplatesFetch = now;
 
       // Use background script for template fetching (it handles caching internally now)
@@ -520,15 +505,11 @@ export class BackgroundCommunicator {
 
       // Keep local cache for rate limiting purposes
       this.cachedTemplates = response.templates;
-      console.log(`📋 Templates received and cached locally (${this.cachedTemplates.length})`);
 
       return response.templates;
     } catch (error) {
-      console.warn('📋 Error fetching templates:', error);
-      
       // Return stale local cache if available
       if (this.cachedTemplates) {
-        console.log(`📋 Using stale local cache as fallback (${this.cachedTemplates.length})`);
         return this.cachedTemplates;
       }
       

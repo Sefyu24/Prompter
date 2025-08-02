@@ -1,6 +1,6 @@
 /**
  * @fileoverview Constants and configuration for the content script
- * @author Prompter Extension
+ * @author Promptr Extension
  * @since 1.0.0
  */
 
